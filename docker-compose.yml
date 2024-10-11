@@ -1,0 +1,34 @@
+version: "3.7"
+
+services:
+  qbittal:
+    container_name: qbittal
+    image: qbittal
+    labels:
+      - traefik.http.routers.qbittal.rule=Host(`qbittal.example.com`)
+      - traefik.http.routers.qbittal.entrypoints=web,websecure
+      - traefik.http.routers.qbittal.service=qbittal
+      - traefik.http.services.qbittal.loadbalancer.server.port=8061
+      - traefik.http.routers.qbittal.tls=true
+      - traefik.http.routers.qbittal.tls.certresolver=selfsignded
+      - traefik.port=80
+    networks:
+      - qbittalnet
+      - proxy
+    ports:
+      - 8061:8061
+
+networks:
+  proxy:
+    external: true
+  qbittalnet:
+    driver: bridge
+    external: false
+
+volumes:
+  qbittalpgdata:
+    driver: local
+  qbittalpgconf:
+    driver: local
+  qbittalpglog:
+    driver: local
