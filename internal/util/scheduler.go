@@ -8,13 +8,13 @@ import (
 )
 
 type Job struct {
-	ID      int
+	ID      string
 	EntryID cron.EntryID
 }
 
 var jobMutex sync.Mutex
 var cronScheduler *cron.Cron
-var jobs = make(map[int]Job)
+var jobs = make(map[string]Job)
 
 func init() {
 	// This function will be called automatically before main() starts
@@ -24,7 +24,7 @@ func init() {
 }
 
 // AddJob schedules a new job and stores it in the jobs map
-func AddJob(id int, schedule string, task func()) error {
+func AddJob(id string, schedule string, task func()) error {
 	jobMutex.Lock()
 	defer jobMutex.Unlock()
 
@@ -44,8 +44,30 @@ func AddJob(id int, schedule string, task func()) error {
 	return nil
 }
 
+func UpdateJob(id string, schedule string, task func()) error {
+	jobMutex.Lock()
+	defer jobMutex.Unlock()
+
+	if job, ok := jobs[id]; ok {
+		cronScheduler.Remove(job.EntryID)
+		entryID, err := cronScheduler.AddFunc(schedule, task)
+		if err != nil {
+			return err
+		}
+		jobs[id] = Job{
+			ID:      id,
+			EntryID: entryID,
+		}
+		log.Infof("Updated job with ID: %d\n", id)
+	} else {
+		log.Errorf("Job with ID: %d not found\n", id)
+	}
+
+	return nil
+}
+
 // RemoveJob deletes a job by its ID
-func RemoveJob(id int) {
+func RemoveJob(id string) {
 	jobMutex.Lock()
 	defer jobMutex.Unlock()
 

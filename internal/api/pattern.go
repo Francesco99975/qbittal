@@ -1,7 +1,9 @@
 package api
 
 import (
+	"github.com/Francesco99975/qbittal/internal/helpers"
 	"github.com/Francesco99975/qbittal/internal/models"
+	"github.com/Francesco99975/qbittal/internal/util"
 	"github.com/labstack/echo/v4"
 )
 
@@ -37,6 +39,11 @@ func CreatePattern() echo.HandlerFunc {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating pattern", Errors: []string{err.Error()}})
 		}
 
+		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireTime), func() { util.Scraper(newPattern) })
+		if err != nil {
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating job", Errors: []string{err.Error()}})
+		}
+
 		return c.JSON(200, newPattern)
 	}
 }
@@ -70,6 +77,11 @@ func UpdatePattern() echo.HandlerFunc {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating pattern", Errors: []string{err.Error()}})
 		}
 
+		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireTime), func() { util.Scraper(pattern) })
+		if err != nil {
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating job", Errors: []string{err.Error()}})
+		}
+
 		return c.JSON(200, pattern)
 	}
 }
@@ -85,6 +97,9 @@ func DeletePattern() echo.HandlerFunc {
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while deleting pattern", Errors: []string{err.Error()}})
 		}
+
+		util.RemoveJob(pattern.ID)
+
 		return c.JSON(200, "Pattern deleted")
 	}
 }
