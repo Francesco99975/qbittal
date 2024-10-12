@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -71,7 +72,7 @@ func (p *PatternPayload) ToPattern() (Pattern, error) {
 }
 
 type Pattern struct {
-	ID             int       `json:"id"`
+	ID             string    `json:"id"`
 	QueryKeywords  []string  `json:"query_keywords"`
 	SearchKeywords []string  `json:"search_keywords"`
 	DownloadPath   string    `json:"download_path"`
@@ -80,4 +81,86 @@ type Pattern struct {
 	FireTime       time.Time `json:"fire_time"`
 	Created        time.Time `json:"created"`
 	Updated        time.Time `json:"updated"`
+}
+
+func GetPatterns() ([]Pattern, error) {
+	rows, err := db.Query("SELECT * FROM patterns")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var patterns []Pattern
+
+	for rows.Next() {
+		var p PatternDB
+		err := rows.Scan(&p.ID, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+		if err != nil {
+			return nil, err
+		}
+
+		patterns = append(patterns, p.ToPattern())
+
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+
+	}
+
+	return patterns, nil
+}
+
+func GetPattern(id string) (Pattern, error) {
+	row := db.QueryRow("SELECT * FROM patterns WHERE id = $1", id)
+	var p PatternDB
+	err := row.Scan(&p.ID, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+	if err != nil {
+		return Pattern{}, err
+	}
+
+	return p.ToPattern(), nil
+}
+
+func AddPattern(p Pattern) error {
+	query := "INSERT INTO patterns (query, search, dlpath, period, dayind, firetime) VALUES ($1, $2, $3, $4, $5, $6, $7, $9)"
+	_, err := db.Exec(query, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime)
+	return err
+}
+
+func (p *Pattern) Update() error {
+	query := "UPDATE patterns SET query = $1, search = $2, dlpath = $3, period = $4, dayind = $5, firetime = $6 WHERE id = $7"
+	_, err := db.Exec(query, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime, p.ID)
+	return err
+}
+
+func (p *Pattern) Delete() error {
+	query := "DELETE FROM patterns WHERE id = $1"
+	_, err := db.Exec(query, p.ID)
+	return err
+}
+
+type PatternDB struct {
+	ID           string    `db:"id"`
+	Query        string    `db:"query"`
+	Search       string    `db:"search"`
+	DownloadPath string    `db:"dlpath"`
+	Period       string    `db:"period"`
+	Dayind       string    `db:"dayind"`
+	FireTime     time.Time `db:"firetime"`
+	Created      time.Time `db:"created"`
+	Updated      time.Time `db:"updated"`
+}
+
+func (p *PatternDB) ToPattern() Pattern {
+	return Pattern{
+		ID:             p.ID,
+		QueryKeywords:  strings.Split(p.Query, ","),
+		SearchKeywords: strings.Split(p.Search, ","),
+		DownloadPath:   p.DownloadPath,
+		Period:         Period(p.Period),
+		DayIndicator:   p.Dayind,
+		FireTime:       p.FireTime,
+		Created:        p.Created,
+		Updated:        p.Updated,
+	}
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -19,12 +18,12 @@ func main() {
 
 	port := os.Getenv("PORT")
 
-	models.Setup(os.Getenv("DSN"))
+	adminPassword := models.Setup(os.Getenv("DSN"))
 
 	e := createRouter()
 
 	go func() {
-		fmt.Printf("Running Server on port %s", port)
+		e.Logger.Infof("Admin password: %s", adminPassword)
 		e.Logger.Fatal(e.Start(":" + port))
 	}()
 
