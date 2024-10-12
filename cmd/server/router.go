@@ -8,6 +8,7 @@ import (
 
 	"github.com/Francesco99975/qbittal/internal/api"
 	"github.com/Francesco99975/qbittal/internal/controllers"
+	"github.com/Francesco99975/qbittal/internal/middlewares"
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/Francesco99975/qbittal/views"
 
@@ -35,10 +36,10 @@ func createRouter() *echo.Echo {
 
 	admin := web.Group("/admin")
 	admin.GET("/login", api.Login())
-	admin.GET("/patterns", api.GetPatterns())
-	admin.POST("/patterns", api.CreatePattern())
-	admin.PUT("/patterns/:id", api.UpdatePattern())
-	admin.DELETE("/patterns/:id", api.DeletePattern())
+	admin.GET("/patterns", api.GetPatterns(), middlewares.IsAuthenticatedAdmin())
+	admin.POST("/patterns", api.CreatePattern(), middlewares.IsAuthenticatedAdmin())
+	admin.PUT("/patterns/:id", api.UpdatePattern(), middlewares.IsAuthenticatedAdmin())
+	admin.DELETE("/patterns/:id", api.DeletePattern(), middlewares.IsAuthenticatedAdmin())
 
 	e.HTTPErrorHandler = serverErrorHandler
 

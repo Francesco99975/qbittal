@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS admins (
 
 CREATE TABLE IF NOT EXISTS patterns (
     id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
     query TEXT NOT NULL,
     search TEXT NOT NULL,
     dlpath TEXT NOT NULL,

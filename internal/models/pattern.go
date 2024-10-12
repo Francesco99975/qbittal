@@ -43,7 +43,29 @@ func isValidDayIndicator(dayIndicator string, period Period) bool {
 	}
 }
 
+type Source = string
+
+const (
+	Nyaa      Source = "nyaa.si"
+	PirateBay Source = "thepiratebay.org"
+)
+
+func parseSource(source string) (Source, error) {
+	switch source {
+	case Nyaa, PirateBay:
+		return Source(source), nil
+	default:
+		return source, fmt.Errorf("invalid source: %s", source)
+	}
+}
+
+func isValidSource(source string) bool {
+	_, err := parseSource(source)
+	return err == nil
+}
+
 type PatternPayload struct {
+	Source         string    `json:"source"`
 	QueryKeywords  []string  `json:"query_keywords"`
 	SearchKeywords []string  `json:"search_keywords"`
 	DownloadPath   string    `json:"download_path"`
@@ -53,7 +75,7 @@ type PatternPayload struct {
 }
 
 func (p *PatternPayload) Validate() bool {
-	return len(p.QueryKeywords) > 0 && len(p.SearchKeywords) > 0 && len(p.DownloadPath) > 0 && isValidPeriod(p.Period) && isValidDayIndicator(p.DayIndicator, p.Period) && p.FireTime.After(time.Now().Add(3*time.Minute))
+	return isValidSource(p.Source) && len(p.QueryKeywords) > 0 && len(p.SearchKeywords) > 0 && len(p.DownloadPath) > 0 && isValidPeriod(p.Period) && isValidDayIndicator(p.DayIndicator, p.Period) && p.FireTime.After(time.Now().Add(3*time.Minute))
 }
 
 func (p *PatternPayload) ToPattern() (Pattern, error) {
@@ -61,7 +83,13 @@ func (p *PatternPayload) ToPattern() (Pattern, error) {
 	if err != nil {
 		return Pattern{}, err
 	}
+
+	source, err := parseSource(p.Source)
+	if err != nil {
+		return Pattern{}, err
+	}
 	return Pattern{
+		Source:         source,
 		QueryKeywords:  p.QueryKeywords,
 		SearchKeywords: p.SearchKeywords,
 		DownloadPath:   p.DownloadPath,
@@ -73,6 +101,7 @@ func (p *PatternPayload) ToPattern() (Pattern, error) {
 
 type Pattern struct {
 	ID             string    `json:"id"`
+	Source         Source    `json:"source"`
 	QueryKeywords  []string  `json:"query_keywords"`
 	SearchKeywords []string  `json:"search_keywords"`
 	DownloadPath   string    `json:"download_path"`
@@ -94,7 +123,7 @@ func GetPatterns() ([]Pattern, error) {
 
 	for rows.Next() {
 		var p PatternDB
-		err := rows.Scan(&p.ID, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+		err := rows.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +142,7 @@ func GetPatterns() ([]Pattern, error) {
 func GetPattern(id string) (Pattern, error) {
 	row := db.QueryRow("SELECT * FROM patterns WHERE id = $1", id)
 	var p PatternDB
-	err := row.Scan(&p.ID, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+	err := row.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
 	if err != nil {
 		return Pattern{}, err
 	}
@@ -122,14 +151,14 @@ func GetPattern(id string) (Pattern, error) {
 }
 
 func AddPattern(p Pattern) error {
-	query := "INSERT INTO patterns (query, search, dlpath, period, dayind, firetime) VALUES ($1, $2, $3, $4, $5, $6, $7, $9)"
-	_, err := db.Exec(query, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime)
+	query := "INSERT INTO patterns (source, query, search, dlpath, period, dayind, firetime) VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $10)"
+	_, err := db.Exec(query, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime)
 	return err
 }
 
 func (p *Pattern) Update() error {
-	query := "UPDATE patterns SET query = $1, search = $2, dlpath = $3, period = $4, dayind = $5, firetime = $6 WHERE id = $7"
-	_, err := db.Exec(query, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime, p.ID)
+	query := "UPDATE patterns SET source = $1, query = $2, search = $3, dlpath = $4, period = $5, dayind = $6, firetime = $7 WHERE id = $8"
+	_, err := db.Exec(query, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime, p.ID)
 	return err
 }
 
@@ -141,6 +170,7 @@ func (p *Pattern) Delete() error {
 
 type PatternDB struct {
 	ID           string    `db:"id"`
+	Source       string    `db:"source"`
 	Query        string    `db:"query"`
 	Search       string    `db:"search"`
 	DownloadPath string    `db:"dlpath"`
@@ -154,6 +184,7 @@ type PatternDB struct {
 func (p *PatternDB) ToPattern() Pattern {
 	return Pattern{
 		ID:             p.ID,
+		Source:         Source(p.Source),
 		QueryKeywords:  strings.Split(p.Query, ","),
 		SearchKeywords: strings.Split(p.Search, ","),
 		DownloadPath:   p.DownloadPath,
