@@ -23,7 +23,10 @@ func main() {
 	e := createRouter()
 
 	go func() {
-		e.Logger.Infof("Admin password: %s", adminPassword)
+		e.Logger.Infof("Running Environment: %s", os.Getenv("GO_ENV"))
+		if adminPassword != "" {
+			e.Logger.Infof("Admin password: %s", adminPassword)
+		}
 		e.Logger.Fatal(e.Start(":" + port))
 	}()
 
