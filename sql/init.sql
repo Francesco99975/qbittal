@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS patterns (
     dayind TEXT NOT NULL,
     firetime TIMESTAMPTZ NOT NULL,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 SELECT apply_update_trigger('patterns');
