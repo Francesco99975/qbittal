@@ -102,12 +102,12 @@ func (p *PatternPayload) ToPattern() (Pattern, error) {
 type Pattern struct {
 	ID             string    `json:"id"`
 	Source         Source    `json:"source"`
-	QueryKeywords  []string  `json:"query_keywords"`
-	SearchKeywords []string  `json:"search_keywords"`
-	DownloadPath   string    `json:"download_path"`
+	QueryKeywords  []string  `json:"queryKeywords"`
+	SearchKeywords []string  `json:"searchKeywords"`
+	DownloadPath   string    `json:"downloadPath"`
 	Period         Period    `json:"period"`
-	DayIndicator   string    `json:"day_indicator"`
-	FireTime       time.Time `json:"fire_time"`
+	DayIndicator   string    `json:"dayIndicator"`
+	FireTime       time.Time `json:"fireTime"`
 	Created        time.Time `json:"created"`
 	Updated        time.Time `json:"updated"`
 }
@@ -119,7 +119,7 @@ func GetPatterns() ([]Pattern, error) {
 	}
 	defer rows.Close()
 
-	var patterns []Pattern
+	patterns := make([]Pattern, 0)
 
 	for rows.Next() {
 		var p PatternDB

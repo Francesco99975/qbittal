@@ -32,7 +32,7 @@ func Login() echo.HandlerFunc {
 			return c.JSON(http.StatusInternalServerError, models.JSONErrorResponse{Code: http.StatusInternalServerError, Message: fmt.Sprintf("Error while generating token. Cause -> %v", err)})
 		}
 
-		return c.JSON(http.StatusOK, models.LoginInfo{Token: token})
+		return c.JSON(http.StatusOK, models.LoginInfo{Url: payload.Server, Token: token})
 	}
 }
 

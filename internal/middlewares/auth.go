@@ -14,17 +14,17 @@ func IsAuthenticatedAdmin() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			cookie, err := c.Cookie("token")
 			if err != nil {
-				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: "Unauthorized. Cause -> Token not provided"})
+				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: "Unauthorized Access <- Token not provided"})
 			}
 
 			token := cookie.Value
 			if token == "" {
-				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: "Unauthorized. Cause -> Token not provided"})
+				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: "Unauthorized Access <- Token not provided"})
 			}
 
 			_, err = helpers.ValidateToken(token)
 			if err != nil {
-				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: fmt.Sprintf("Unauthorized. Cause -> %v", err), Errors: []string{err.Error()}})
+				return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: fmt.Sprintf("Unauthorized Access <- Token NOT Valid <- %v", err), Errors: []string{err.Error()}})
 			}
 
 			return next(c)

@@ -35,7 +35,8 @@ func createRouter() *echo.Echo {
 	web.GET("/", controllers.Index())
 
 	admin := web.Group("/admin")
-	admin.GET("/login", api.Login())
+	admin.POST("/login", api.Login())
+	admin.POST("/check", api.CheckToken())
 	admin.GET("/patterns", api.GetPatterns(), middlewares.IsAuthenticatedAdmin())
 	admin.POST("/patterns", api.CreatePattern(), middlewares.IsAuthenticatedAdmin())
 	admin.PUT("/patterns/:id", api.UpdatePattern(), middlewares.IsAuthenticatedAdmin())

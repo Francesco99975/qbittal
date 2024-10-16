@@ -10,13 +10,13 @@ import (
 )
 
 type Admin struct {
-	ID       int    `json:"id"`
+	ID       string `json:"id"`
 	Password string `json:"password"`
 }
 
 func GetAdminFromDB() (Admin, error) {
 	var admin Admin
-	err := db.Get(&admin, "SELECT * FROM admin")
+	err := db.Get(&admin, "SELECT * FROM admins LIMIT 1")
 	return admin, err
 }
 

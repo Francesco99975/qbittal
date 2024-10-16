@@ -6,6 +6,7 @@ type LoginPayload struct {
 }
 
 type LoginInfo struct {
+	Url   string `json:"url"`
 	Token string `json:"token"`
 }
 

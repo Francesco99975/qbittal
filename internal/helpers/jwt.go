@@ -14,7 +14,7 @@ func ValidateToken(tokenString string) (string, error) {
 			return nil, fmt.Errorf("There was an error")
 		}
 
-		return []byte(os.Getenv("JWT_SECRET")), nil
+		return []byte(os.Getenv("SECRET_KEY")), nil
 	})
 
 	if err != nil {
