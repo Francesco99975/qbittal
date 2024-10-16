@@ -1,8 +1,11 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"regexp"
@@ -178,20 +181,69 @@ func Scraper(pattern models.Pattern) {
 
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 
-	form := url.Values{}
-	form.Add("urls", torrent.MagnetLink)
-	form.Add("savepath", pattern.DownloadPath)
+	// Create a new HTTP client with a cookie jar to store cookies
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
 
-	resp, err := http.PostForm(qbittorrentAPI, form)
+	// Step 1: Sign In
+	loginURL := fmt.Sprintf("%s/api/v2/auth/login", qbittorrentAPI)
+	loginData := url.Values{}
+	loginData.Set("username", os.Getenv("QBITTORRENT_USERNAME"))
+	loginData.Set("password", os.Getenv("QBITTORRENT_PASSWORD"))
+
+	req, err := http.NewRequest("POST", loginURL, bytes.NewBufferString(loginData.Encode()))
 	if err != nil {
-		log.Errorf("Error sending request to qbittorrent API <-", err)
+		log.Errorf("failed to create login request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("failed to login: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check if the request was successful
-	if resp.StatusCode == http.StatusOK {
-		log.Info("Magnet link added successfully!")
-	} else {
-		log.Errorf("Failed to add magnet link: %s\n", resp.Status)
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("login failed with status code: %d", resp.StatusCode)
+	}
+
+	// Step 2: Add Torrent
+	addTorrentURL := fmt.Sprintf("%s/api/v2/torrents/add", qbittorrentAPI)
+	addTorrentData := url.Values{}
+	addTorrentData.Set("urls", torrent.MagnetLink)
+	addTorrentData.Set("savepath", pattern.DownloadPath)
+
+	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
+	if err != nil {
+		log.Errorf("failed to create add torrent request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		log.Errorf("failed to add torrent: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Errorf("failed to add torrent: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Step 3: Log Out
+	logoutURL := fmt.Sprintf("%s/api/v2/auth/logout", qbittorrentAPI)
+	req, err = http.NewRequest("POST", logoutURL, nil)
+	if err != nil {
+		log.Errorf("failed to create logout request: %w", err)
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		log.Errorf("failed to logout: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("logout failed with status code: %d", resp.StatusCode)
 	}
 }
