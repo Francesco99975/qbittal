@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS patterns (
     dlpath TEXT NOT NULL,
     period TEXT NOT NULL,
     dayind TEXT NOT NULL,
-    firetime TIMESTAMPTZ NOT NULL,
+    firehour INT NOT NULL,
+    fireminute TEXT NOT NULL,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -3,16 +3,13 @@ package helpers
 import (
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/labstack/gommon/log"
 )
 
-func ConvertPeriodToCron(period models.Period, dayIndicator string, fireTime time.Time) string {
+func ConvertPeriodToCron(period models.Period, dayIndicator string, fireHour int, fireMinute int) string {
 	var cron string
-	hour := fireTime.Hour()
-	minute := fireTime.Minute()
 
 	day, err := strconv.Atoi(dayIndicator)
 	if err != nil {
@@ -21,11 +18,11 @@ func ConvertPeriodToCron(period models.Period, dayIndicator string, fireTime tim
 
 	switch period {
 	case models.Daily:
-		cron = fmt.Sprintf("%d %d * * *", minute, hour)
+		cron = fmt.Sprintf("%d %d * * *", fireMinute, fireHour)
 	case models.Weekly:
-		cron = fmt.Sprintf("%d %d * * %d", minute, hour, day)
+		cron = fmt.Sprintf("%d %d * * %d", fireMinute, fireHour, day)
 	case models.Monthly:
-		cron = fmt.Sprintf("%d %d %d * *", minute, hour, day)
+		cron = fmt.Sprintf("%d %d %d * *", fireMinute, fireHour, day)
 	}
 
 	return cron

@@ -5,12 +5,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Period = string
 
 const (
-	Daily   Period = "daily"
+	Daily   Period = "dayly"
 	Weekly  Period = "weekly"
 	Monthly Period = "monthly"
 )
@@ -65,17 +67,18 @@ func isValidSource(source string) bool {
 }
 
 type PatternPayload struct {
-	Source         string    `json:"source"`
-	QueryKeywords  []string  `json:"query_keywords"`
-	SearchKeywords []string  `json:"search_keywords"`
-	DownloadPath   string    `json:"download_path"`
-	Period         string    `json:"period"`
-	DayIndicator   string    `json:"day_indicator"`
-	FireTime       time.Time `json:"fire_time"`
+	Source         string   `json:"source"`
+	QueryKeywords  []string `json:"queryKeywords"`
+	SearchKeywords []string `json:"searchKeywords"`
+	DownloadPath   string   `json:"downloadPath"`
+	Period         string   `json:"period"`
+	DayIndicator   string   `json:"dayIndicator"`
+	FireHour       int      `json:"fireHour"`
+	FireMinute     int      `json:"fireMinute"`
 }
 
 func (p *PatternPayload) Validate() bool {
-	return isValidSource(p.Source) && len(p.QueryKeywords) > 0 && len(p.SearchKeywords) > 0 && len(p.DownloadPath) > 0 && isValidPeriod(p.Period) && isValidDayIndicator(p.DayIndicator, p.Period) && p.FireTime.After(time.Now().Add(3*time.Minute))
+	return isValidSource(p.Source) && len(p.QueryKeywords) > 0 && len(p.SearchKeywords) > 0 && len(p.DownloadPath) > 0 && isValidPeriod(p.Period) && isValidDayIndicator(p.DayIndicator, p.Period) && p.FireHour >= 0 && p.FireHour < 24 && p.FireMinute >= 0 && p.FireMinute < 60
 }
 
 func (p *PatternPayload) ToPattern() (Pattern, error) {
@@ -88,14 +91,17 @@ func (p *PatternPayload) ToPattern() (Pattern, error) {
 	if err != nil {
 		return Pattern{}, err
 	}
+
 	return Pattern{
+		ID:             uuid.New().String(),
 		Source:         source,
 		QueryKeywords:  p.QueryKeywords,
 		SearchKeywords: p.SearchKeywords,
 		DownloadPath:   p.DownloadPath,
 		Period:         period,
 		DayIndicator:   p.DayIndicator,
-		FireTime:       p.FireTime,
+		FireHour:       p.FireHour,
+		FireMinute:     p.FireMinute,
 	}, nil
 }
 
@@ -107,7 +113,8 @@ type Pattern struct {
 	DownloadPath   string    `json:"downloadPath"`
 	Period         Period    `json:"period"`
 	DayIndicator   string    `json:"dayIndicator"`
-	FireTime       time.Time `json:"fireTime"`
+	FireHour       int       `json:"fireHour"`
+	FireMinute     int       `json:"fireMinute"`
 	Created        time.Time `json:"created"`
 	Updated        time.Time `json:"updated"`
 }
@@ -123,7 +130,7 @@ func GetPatterns() ([]Pattern, error) {
 
 	for rows.Next() {
 		var p PatternDB
-		err := rows.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+		err := rows.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireHour, &p.FireMinute, &p.Created, &p.Updated)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +149,7 @@ func GetPatterns() ([]Pattern, error) {
 func GetPattern(id string) (Pattern, error) {
 	row := db.QueryRow("SELECT * FROM patterns WHERE id = $1", id)
 	var p PatternDB
-	err := row.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireTime, &p.Created, &p.Updated)
+	err := row.Scan(&p.ID, &p.Source, &p.Query, &p.Search, &p.DownloadPath, &p.Period, &p.Dayind, &p.FireHour, &p.FireMinute, &p.Created, &p.Updated)
 	if err != nil {
 		return Pattern{}, err
 	}
@@ -151,14 +158,14 @@ func GetPattern(id string) (Pattern, error) {
 }
 
 func AddPattern(p Pattern) error {
-	query := "INSERT INTO patterns (source, query, search, dlpath, period, dayind, firetime) VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $10)"
-	_, err := db.Exec(query, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime)
+	query := "INSERT INTO patterns (id, source, query, search, dlpath, period, dayind, firehour, fireminute) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+	_, err := db.Exec(query, p.ID, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireHour, p.FireMinute)
 	return err
 }
 
 func (p *Pattern) Update() error {
-	query := "UPDATE patterns SET source = $1, query = $2, search = $3, dlpath = $4, period = $5, dayind = $6, firetime = $7 WHERE id = $8"
-	_, err := db.Exec(query, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireTime, p.ID)
+	query := "UPDATE patterns SET source = $1, query = $2, search = $3, dlpath = $4, period = $5, dayind = $6, firehour = $7, fireminute = $8 WHERE id = $9"
+	_, err := db.Exec(query, p.Source, strings.Join(p.QueryKeywords, ","), strings.Join(p.SearchKeywords, ","), p.DownloadPath, p.Period, p.DayIndicator, p.FireHour, p.FireMinute, p.ID)
 	return err
 }
 
@@ -176,7 +183,8 @@ type PatternDB struct {
 	DownloadPath string    `db:"dlpath"`
 	Period       string    `db:"period"`
 	Dayind       string    `db:"dayind"`
-	FireTime     time.Time `db:"firetime"`
+	FireHour     int       `db:"firehour"`
+	FireMinute   int       `db:"fireminute"`
 	Created      time.Time `db:"created"`
 	Updated      time.Time `db:"updated"`
 }
@@ -190,7 +198,8 @@ func (p *PatternDB) ToPattern() Pattern {
 		DownloadPath:   p.DownloadPath,
 		Period:         Period(p.Period),
 		DayIndicator:   p.Dayind,
-		FireTime:       p.FireTime,
+		FireHour:       p.FireHour,
+		FireMinute:     p.FireMinute,
 		Created:        p.Created,
 		Updated:        p.Updated,
 	}

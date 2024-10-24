@@ -5,6 +5,7 @@ import (
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/Francesco99975/qbittal/internal/util"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/gommon/log"
 )
 
 func GetPatterns() echo.HandlerFunc {
@@ -21,30 +22,40 @@ func GetPatterns() echo.HandlerFunc {
 func CreatePattern() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var payload models.PatternPayload
+
 		if err := c.Bind(&payload); err != nil {
+			log.Errorf("Error while binding request body: %v", err)
 			return c.JSON(400, models.JSONErrorResponse{Code: 400, Message: "Invalid request body", Errors: []string{err.Error()}})
 		}
 
+		log.Infof("Payload: %v", payload)
+
 		if !payload.Validate() {
-			return c.JSON(400, models.JSONErrorResponse{Code: 400, Message: "Invalid request body", Errors: []string{"Invalid period"}})
+			return c.JSON(400, models.JSONErrorResponse{Code: 400, Message: "Invalid payload", Errors: []string{"Invalid period"}})
 		}
 
 		newPattern, err := payload.ToPattern()
 		if err != nil {
-			return c.JSON(400, models.JSONErrorResponse{Code: 400, Message: "Invalid request body", Errors: []string{err.Error()}})
+			return c.JSON(400, models.JSONErrorResponse{Code: 400, Message: "Invalid pattern", Errors: []string{err.Error()}})
 		}
 
 		err = models.AddPattern(newPattern)
 		if err != nil {
+			log.Errorf("Error while creating pattern: %v", err)
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating pattern", Errors: []string{err.Error()}})
 		}
 
-		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireTime), func() { util.Scraper(newPattern) })
+		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireHour, newPattern.FireMinute), func() { util.Scraper(newPattern) })
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating job", Errors: []string{err.Error()}})
 		}
 
-		return c.JSON(200, newPattern)
+		updatedPatterns, err := models.GetPatterns()
+		if err != nil {
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while getting patterns from DB", Errors: []string{err.Error()}})
+		}
+
+		return c.JSON(200, updatedPatterns)
 	}
 }
 
@@ -70,19 +81,23 @@ func UpdatePattern() echo.HandlerFunc {
 		pattern.DownloadPath = payload.DownloadPath
 		pattern.Period = payload.Period
 		pattern.DayIndicator = payload.DayIndicator
-		pattern.FireTime = payload.FireTime
 
 		err = pattern.Update()
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating pattern", Errors: []string{err.Error()}})
 		}
 
-		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireTime), func() { util.Scraper(pattern) })
+		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireHour, pattern.FireMinute), func() { util.Scraper(pattern) })
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating job", Errors: []string{err.Error()}})
 		}
 
-		return c.JSON(200, pattern)
+		updatedPatterns, err := models.GetPatterns()
+		if err != nil {
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while getting patterns from DB", Errors: []string{err.Error()}})
+		}
+
+		return c.JSON(200, updatedPatterns)
 	}
 }
 
@@ -100,6 +115,11 @@ func DeletePattern() echo.HandlerFunc {
 
 		util.RemoveJob(pattern.ID)
 
-		return c.JSON(200, "Pattern deleted")
+		updatedPatterns, err := models.GetPatterns()
+		if err != nil {
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while getting patterns from DB", Errors: []string{err.Error()}})
+		}
+
+		return c.JSON(200, updatedPatterns)
 	}
 }

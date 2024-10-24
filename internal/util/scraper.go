@@ -117,6 +117,7 @@ func Scraper(pattern models.Pattern) {
 
 				if err != nil {
 					log.Errorf("Error while finding magnet link <- %v", err)
+
 				}
 
 				title, err := nyaaTitleFinder(el.ChildAttrs("td>a", "title"), pattern.SearchKeywords)
@@ -161,6 +162,13 @@ func Scraper(pattern models.Pattern) {
 
 	c.Wait()
 
+	log.Infof("Torrents found: %v", torrents)
+
+	if len(torrents) == 0 {
+		log.Errorf("No torrents found")
+		return
+	}
+
 	// Filter out torrents with a lower thatn maximum quality
 	max, err := findMaxQualityFromTorrents(torrents)
 	if err != nil {
@@ -178,6 +186,8 @@ func Scraper(pattern models.Pattern) {
 
 	// Download the top torrent by making a request to the qbittorrent API
 	torrent := filteredTorrents[0]
+
+	log.Infof("Chosen torrent: %v", torrent)
 
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 
@@ -205,6 +215,7 @@ func Scraper(pattern models.Pattern) {
 
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("login failed with status code: %d", resp.StatusCode)
+		return
 	}
 
 	// Step 2: Add Torrent
@@ -216,12 +227,14 @@ func Scraper(pattern models.Pattern) {
 	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
 	if err != nil {
 		log.Errorf("failed to create add torrent request: %w", err)
+		return
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err = client.Do(req)
 	if err != nil {
 		log.Errorf("failed to add torrent: %w", err)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -235,15 +248,18 @@ func Scraper(pattern models.Pattern) {
 	req, err = http.NewRequest("POST", logoutURL, nil)
 	if err != nil {
 		log.Errorf("failed to create logout request: %w", err)
+		return
 	}
 
 	resp, err = client.Do(req)
 	if err != nil {
 		log.Errorf("failed to logout: %w", err)
+		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("logout failed with status code: %d", resp.StatusCode)
+		return
 	}
 }
