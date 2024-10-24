@@ -262,4 +262,6 @@ func Scraper(pattern models.Pattern) {
 		log.Errorf("logout failed with status code: %d", resp.StatusCode)
 		return
 	}
+
+	log.Infof("Torrent added successfully")
 }

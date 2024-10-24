@@ -20,6 +20,13 @@ func main() {
 
 	adminPassword := models.Setup(os.Getenv("DSN"))
 
+	patterns, err := models.GetPatterns()
+	if err != nil {
+		panic(err)
+	}
+
+	boot.SetupCronJobs(patterns)
+
 	e := createRouter()
 
 	go func() {
