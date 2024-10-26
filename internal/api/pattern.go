@@ -123,3 +123,20 @@ func DeletePattern() echo.HandlerFunc {
 		return c.JSON(200, updatedPatterns)
 	}
 }
+
+// Endpoint for Flutter to get torrent progress
+func GetTorrentProgress() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		id := c.Param("id")
+		util.Mu.Lock()
+		dlTorrent, exists := util.DownloadingTorrents[id]
+		util.Mu.Unlock()
+
+		if !exists {
+			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Torrent not found", Errors: []string{"Torrent not found"}})
+		}
+
+		return c.JSON(200, dlTorrent)
+
+	}
+}

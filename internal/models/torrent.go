@@ -1,5 +1,14 @@
 package models
 
+type DLTorrent struct {
+	Hash     string  `json:"hash"`
+	Progress float64 `json:"progress"`
+}
+
+func (t *DLTorrent) UpdateProgress(progress float64) {
+	t.Progress = progress
+}
+
 type Torrent struct {
 	MagnetLink string   `json:"magnet_link"`
 	Keywords   []string `json:"keywords"`

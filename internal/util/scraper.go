@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,12 +12,170 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Francesco99975/qbittal/internal/helpers"
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/gocolly/colly"
 	"github.com/labstack/gommon/log"
 )
+
+var DownloadingTorrents = make(map[string]*models.DLTorrent, 0)
+var Mu = &sync.Mutex{}
+
+// Create a new HTTP client with a cookie jar to store cookies
+var jar, _ = cookiejar.New(nil)
+var client = &http.Client{Jar: jar}
+
+func Scraper(pattern models.Pattern) {
+	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
+	torrents := make([]models.Torrent, 0)
+
+	c.OnHTML("table.torrent-list>tbody", func(e *colly.HTMLElement) {
+		if pattern.Source == models.Nyaa {
+			e.ForEach("tr", func(i int, el *colly.HTMLElement) {
+
+				magnetLink, err := nyaaMagentLinkFinder(el.ChildAttrs("td>a", "href"))
+
+				if err != nil {
+					log.Errorf("Error while finding magnet link <- %v", err)
+
+				}
+
+				title, err := nyaaTitleFinder(el.ChildAttrs("td>a", "title"), pattern.SearchKeywords)
+				if err != nil {
+					log.Errorf("Error while finding title <- %v", err)
+				}
+
+				size, err := evaluateSize(el.ChildText("td:nth-child(4)"))
+				if err != nil {
+					log.Errorf("Error while evaluating size <- %v", err)
+				}
+
+				seeders, err := strconv.Atoi(el.ChildText("td:nth-child(6)"))
+				if err != nil {
+					log.Errorf("Error while evaluating seeders <- %v", err)
+				}
+
+				leechers, err := strconv.Atoi(el.ChildText("td:nth-child(7)"))
+				if err != nil {
+					log.Errorf("Error while evaluating leechers <- %v", err)
+				}
+
+				torrent := models.Torrent{
+					MagnetLink: magnetLink,
+					Keywords:   strings.Split(title, " "),
+					Size:       size,
+					Seeders:    seeders,
+					Leechers:   leechers,
+				}
+
+				torrent.CalculateQuality(pattern.SearchKeywords)
+
+				torrents = append(torrents, torrent)
+			})
+		}
+	})
+
+	err := c.Visit(fmt.Sprintf("https://%s/%s=%s", pattern.Source, evaluateSearchUrl(pattern.Source), strings.Join(pattern.QueryKeywords, "+")))
+	if err != nil {
+		log.Errorf("Error while visiting the page <- %v", err)
+	}
+
+	c.Wait()
+
+	log.Infof("Torrents found: %v", torrents)
+
+	if len(torrents) == 0 {
+		log.Errorf("No torrents found")
+		return
+	}
+
+	// Filter out torrents with a lower thatn maximum quality
+	max, err := findMaxQualityFromTorrents(torrents)
+	if err != nil {
+		log.Errorf("Error while finding max quality <- %v", err)
+	}
+
+	filteredTorrents := helpers.FilteredSlice(torrents, func(torrent models.Torrent) bool {
+		return torrent.Quality >= max
+	})
+
+	// Sort torrents by most seeders
+	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
+		return a.Seeders > b.Seeders
+	})
+
+	// Download the top torrent by making a request to the qbittorrent API
+	torrent := filteredTorrents[0]
+
+	hash, err := extractHash(torrent.MagnetLink)
+	if err != nil {
+		log.Errorf("Error while extracting hash <- %v", err)
+	}
+
+	DownloadingTorrents[pattern.ID] = &models.DLTorrent{
+		Hash:     hash,
+		Progress: 0.0,
+	}
+
+	log.Infof("Chosen torrent: %v", torrent)
+
+	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
+
+	// Step 1: Sign In
+	loginURL := fmt.Sprintf("%s/api/v2/auth/login", qbittorrentAPI)
+	loginData := url.Values{}
+	loginData.Set("username", os.Getenv("QBITTORRENT_USERNAME"))
+	loginData.Set("password", os.Getenv("QBITTORRENT_PASSWORD"))
+
+	req, err := http.NewRequest("POST", loginURL, bytes.NewBufferString(loginData.Encode()))
+	if err != nil {
+		log.Errorf("failed to create login request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("failed to login: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("login failed with status code: %d", resp.StatusCode)
+		return
+	}
+
+	// Step 2: Add Torrent
+	addTorrentURL := fmt.Sprintf("%s/api/v2/torrents/add", qbittorrentAPI)
+	addTorrentData := url.Values{}
+	addTorrentData.Set("urls", torrent.MagnetLink)
+	addTorrentData.Set("savepath", pattern.DownloadPath)
+
+	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
+	if err != nil {
+		log.Errorf("failed to create add torrent request: %w", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		log.Errorf("failed to add torrent: %w", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Errorf("failed to add torrent: %d - %s", resp.StatusCode, string(body))
+	}
+
+	go trackProgress(pattern.ID)
+
+	log.Infof("Torrent added successfully")
+}
 
 func evaluateSearchUrl(source models.Source) string {
 	switch source {
@@ -105,133 +264,72 @@ func findMaxQualityFromTorrents(torrents []models.Torrent) (int, error) {
 	return maxQuality, nil
 }
 
-func Scraper(pattern models.Pattern) {
-	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
-	torrents := make([]models.Torrent, 0)
+// extractHash extracts the torrent hash from a magnet link
+func extractHash(magnetLink string) (string, error) {
+	u, err := url.Parse(magnetLink)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse magnet link: %v", err)
+	}
 
-	c.OnHTML("table.torrent-list>tbody", func(e *colly.HTMLElement) {
-		if pattern.Source == models.Nyaa {
-			e.ForEach("tr", func(i int, el *colly.HTMLElement) {
-
-				magnetLink, err := nyaaMagentLinkFinder(el.ChildAttrs("td>a", "href"))
-
-				if err != nil {
-					log.Errorf("Error while finding magnet link <- %v", err)
-
-				}
-
-				title, err := nyaaTitleFinder(el.ChildAttrs("td>a", "title"), pattern.SearchKeywords)
-				if err != nil {
-					log.Errorf("Error while finding title <- %v", err)
-				}
-
-				size, err := evaluateSize(el.ChildText("td:nth-child(4)"))
-				if err != nil {
-					log.Errorf("Error while evaluating size <- %v", err)
-				}
-
-				seeders, err := strconv.Atoi(el.ChildText("td:nth-child(6)"))
-				if err != nil {
-					log.Errorf("Error while evaluating seeders <- %v", err)
-				}
-
-				leechers, err := strconv.Atoi(el.ChildText("td:nth-child(7)"))
-				if err != nil {
-					log.Errorf("Error while evaluating leechers <- %v", err)
-				}
-
-				torrent := models.Torrent{
-					MagnetLink: magnetLink,
-					Keywords:   strings.Split(title, " "),
-					Size:       size,
-					Seeders:    seeders,
-					Leechers:   leechers,
-				}
-
-				torrent.CalculateQuality(pattern.SearchKeywords)
-
-				torrents = append(torrents, torrent)
-			})
+	// Magnet link parameters are in the "xt" query parameter
+	for _, param := range u.Query()["xt"] {
+		if strings.HasPrefix(param, "urn:btih:") {
+			return strings.TrimPrefix(param, "urn:btih:"), nil
 		}
-	})
-
-	err := c.Visit(fmt.Sprintf("https://%s/%s=%s", pattern.Source, evaluateSearchUrl(pattern.Source), strings.Join(pattern.QueryKeywords, "+")))
-	if err != nil {
-		log.Errorf("Error while visiting the page <- %v", err)
 	}
 
-	c.Wait()
+	return "", fmt.Errorf("no valid hash found in magnet link")
+}
 
-	log.Infof("Torrents found: %v", torrents)
-
-	if len(torrents) == 0 {
-		log.Errorf("No torrents found")
-		return
+// Track torrent progress
+func trackProgress(id string) {
+	torrentHash := DownloadingTorrents[id].Hash
+	for {
+		progress, isComplete := getTorrentProgress(torrentHash)
+		if isComplete {
+			deleteTorrent(id)
+			return
+		}
+		Mu.Lock()
+		DownloadingTorrents[id].UpdateProgress(progress)
+		Mu.Unlock()
+		time.Sleep(2 * time.Second) // Poll every 2 seconds
 	}
+}
 
-	// Filter out torrents with a lower thatn maximum quality
-	max, err := findMaxQualityFromTorrents(torrents)
-	if err != nil {
-		log.Errorf("Error while finding max quality <- %v", err)
-	}
-
-	filteredTorrents := helpers.FilteredSlice(torrents, func(torrent models.Torrent) bool {
-		return torrent.Quality >= max
-	})
-
-	// Sort torrents by most seeders
-	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
-		return a.Seeders > b.Seeders
-	})
-
-	// Download the top torrent by making a request to the qbittorrent API
-	torrent := filteredTorrents[0]
-
-	log.Infof("Chosen torrent: %v", torrent)
-
+// Get progress for specific torrent
+func getTorrentProgress(torrentHash string) (float64, bool) {
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
-
-	// Create a new HTTP client with a cookie jar to store cookies
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
-
-	// Step 1: Sign In
-	loginURL := fmt.Sprintf("%s/api/v2/auth/login", qbittorrentAPI)
-	loginData := url.Values{}
-	loginData.Set("username", os.Getenv("QBITTORRENT_USERNAME"))
-	loginData.Set("password", os.Getenv("QBITTORRENT_PASSWORD"))
-
-	req, err := http.NewRequest("POST", loginURL, bytes.NewBufferString(loginData.Encode()))
-	if err != nil {
-		log.Errorf("failed to create login request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	url := fmt.Sprintf("%s/api/v2/torrents/info?hashes=%s", qbittorrentAPI, torrentHash)
+	req, _ := http.NewRequest("GET", url, nil)
 
 	resp, err := client.Do(req)
-	if err != nil {
-		log.Errorf("failed to login: %w", err)
+	if err != nil || resp.StatusCode != 200 {
+		return 0, false
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		log.Errorf("login failed with status code: %d", resp.StatusCode)
-		return
+	var torrents []map[string]interface{}
+	body, _ := io.ReadAll(resp.Body)
+	_ = json.Unmarshal(body, &torrents)
+	if len(torrents) == 0 {
+		return 0, false
 	}
 
-	// Step 2: Add Torrent
-	addTorrentURL := fmt.Sprintf("%s/api/v2/torrents/add", qbittorrentAPI)
-	addTorrentData := url.Values{}
-	addTorrentData.Set("urls", torrent.MagnetLink)
-	addTorrentData.Set("savepath", pattern.DownloadPath)
+	progress := torrents[0]["progress"].(float64)
+	isComplete := torrents[0]["state"] == "stalledUP" || torrents[0]["state"] == "pausedUP"
+	return progress, isComplete
+}
 
-	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
-	if err != nil {
-		log.Errorf("failed to create add torrent request: %w", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+// Delete torrent after completion
+func deleteTorrent(id string) {
+	torrentHash := DownloadingTorrents[id].Hash
+	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
+	delete(DownloadingTorrents, id)
+	url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=false", qbittorrentAPI, torrentHash)
+	req, _ := http.NewRequest("POST", url, nil)
 
-	resp, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Errorf("failed to add torrent: %w", err)
 		return
@@ -262,6 +360,4 @@ func Scraper(pattern models.Pattern) {
 		log.Errorf("logout failed with status code: %d", resp.StatusCode)
 		return
 	}
-
-	log.Infof("Torrent added successfully")
 }
