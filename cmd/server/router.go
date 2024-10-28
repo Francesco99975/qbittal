@@ -38,6 +38,7 @@ func createRouter() *echo.Echo {
 	admin.POST("/login", api.Login())
 	admin.POST("/check", api.CheckToken())
 	admin.GET("/patterns", api.GetPatterns(), middlewares.IsAuthenticatedAdmin())
+	admin.GET("/progress/:id", api.GetTorrentProgress(), middlewares.IsAuthenticatedAdmin())
 	admin.POST("/patterns", api.CreatePattern(), middlewares.IsAuthenticatedAdmin())
 	admin.PUT("/patterns/:id", api.UpdatePattern(), middlewares.IsAuthenticatedAdmin())
 	admin.DELETE("/patterns/:id", api.DeletePattern(), middlewares.IsAuthenticatedAdmin())
