@@ -287,7 +287,7 @@ func trackProgress(id string) {
 	for {
 		progress, isComplete := getTorrentProgress(torrentHash)
 		if isComplete {
-			deleteTorrent(id)
+			DeleteTorrent(id, false)
 			return
 		}
 		Mu.Lock()
@@ -322,11 +322,15 @@ func getTorrentProgress(torrentHash string) (float64, bool) {
 }
 
 // Delete torrent after completion
-func deleteTorrent(id string) {
+func DeleteTorrent(id string, deleteFiles bool) {
 	torrentHash := DownloadingTorrents[id].Hash
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
+	dfStr := "false"
+	if deleteFiles {
+		dfStr = "true"
+	}
 	delete(DownloadingTorrents, id)
-	url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=false", qbittorrentAPI, torrentHash)
+	url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=%s", qbittorrentAPI, torrentHash, dfStr)
 	req, _ := http.NewRequest("POST", url, nil)
 
 	resp, err := client.Do(req)

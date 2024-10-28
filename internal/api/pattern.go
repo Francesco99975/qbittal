@@ -124,6 +124,19 @@ func DeletePattern() echo.HandlerFunc {
 	}
 }
 
+func ExecutePattern() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		id := c.Param("id")
+		pattern, err := models.GetPattern(id)
+		if err != nil {
+			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Pattern not found", Errors: []string{err.Error()}})
+		}
+
+		util.Scraper(pattern)
+		return c.JSON(200, "OK")
+	}
+}
+
 // Endpoint for Flutter to get torrent progress
 func GetTorrentProgress() echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -137,6 +150,17 @@ func GetTorrentProgress() echo.HandlerFunc {
 		}
 
 		return c.JSON(200, dlTorrent)
+
+	}
+}
+
+func DeleteTorrent() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		id := c.Param("id")
+
+		util.DeleteTorrent(id, true)
+
+		return c.JSON(200, "OK")
 
 	}
 }
