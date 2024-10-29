@@ -141,15 +141,19 @@ func ExecutePattern() echo.HandlerFunc {
 func GetTorrentProgress() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		id := c.Param("id")
-		util.Mu.Lock()
+		util.Mu.RLock()
 		dlTorrent, exists := util.DownloadingTorrents[id]
-		util.Mu.Unlock()
+		util.Mu.RUnlock()
 
 		if !exists {
 			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Torrent not found", Errors: []string{"Torrent not found"}})
 		}
 
-		return c.JSON(200, dlTorrent)
+		type TorrentProgress struct {
+			Progress float64 `json:"progress"`
+		}
+
+		return c.JSON(200, TorrentProgress{Progress: dlTorrent.Progress})
 
 	}
 }

@@ -22,7 +22,7 @@ import (
 )
 
 var DownloadingTorrents = make(map[string]*models.DLTorrent, 0)
-var Mu = &sync.Mutex{}
+var Mu = &sync.RWMutex{}
 
 // Create a new HTTP client with a cookie jar to store cookies
 var jar, _ = cookiejar.New(nil)
@@ -115,10 +115,13 @@ func Scraper(pattern models.Pattern) {
 		log.Errorf("Error while extracting hash <- %v", err)
 	}
 
+	Mu.Lock()
 	DownloadingTorrents[pattern.ID] = &models.DLTorrent{
 		Hash:     hash,
 		Progress: 0.0,
+		Quit:     make(chan struct{}),
 	}
+	Mu.Unlock()
 
 	log.Infof("Chosen torrent: %v", torrent)
 
@@ -170,6 +173,7 @@ func Scraper(pattern models.Pattern) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		log.Errorf("failed to add torrent: %d - %s", resp.StatusCode, string(body))
+		return
 	}
 
 	go trackProgress(pattern.ID)
@@ -283,17 +287,30 @@ func extractHash(magnetLink string) (string, error) {
 
 // Track torrent progress
 func trackProgress(id string) {
-	torrentHash := DownloadingTorrents[id].Hash
+	Mu.RLock()
+	torrent, exists := DownloadingTorrents[id]
+	if !exists {
+		Mu.RUnlock()
+		return
+	}
+	torrentHash := torrent.Hash
+	quit := torrent.Quit
+	Mu.RUnlock()
 	for {
-		progress, isComplete := getTorrentProgress(torrentHash)
-		if isComplete {
-			DeleteTorrent(id, false)
+		select {
+		case <-quit:
 			return
+		default:
+			progress, isComplete := getTorrentProgress(torrentHash)
+			if isComplete {
+				DeleteTorrent(id, false)
+				return
+			}
+			Mu.Lock()
+			DownloadingTorrents[id].UpdateProgress(progress)
+			Mu.Unlock()
+			time.Sleep(2 * time.Second) // Poll every 2 seconds
 		}
-		Mu.Lock()
-		DownloadingTorrents[id].UpdateProgress(progress)
-		Mu.Unlock()
-		time.Sleep(2 * time.Second) // Poll every 2 seconds
 	}
 }
 
@@ -323,26 +340,37 @@ func getTorrentProgress(torrentHash string) (float64, bool) {
 
 // Delete torrent after completion
 func DeleteTorrent(id string, deleteFiles bool) {
+	Mu.RLock()
 	torrentHash := DownloadingTorrents[id].Hash
+	Mu.RUnlock()
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 	dfStr := "false"
 	if deleteFiles {
 		dfStr = "true"
 	}
+	Mu.Lock()
+	close(DownloadingTorrents[id].Quit)
 	delete(DownloadingTorrents, id)
-	url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=%s", qbittorrentAPI, torrentHash, dfStr)
-	req, _ := http.NewRequest("POST", url, nil)
+	Mu.Unlock()
+	endpoint := fmt.Sprintf("%s/api/v2/torrents/delete", qbittorrentAPI)
+	data := url.Values{}
+	data.Set("hashes", torrentHash)
+	data.Set("deleteFiles", dfStr)
+	// url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=%s", qbittorrentAPI, torrentHash, dfStr)
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBufferString(data.Encode()))
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Errorf("failed to add torrent: %w", err)
+		log.Errorf("failed to delete torrent: %w", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Errorf("failed to add torrent: %d - %s", resp.StatusCode, string(body))
+		log.Errorf("failed to delete torrent: %d - %s", resp.StatusCode, string(body))
 	}
 
 	// Step 3: Log Out

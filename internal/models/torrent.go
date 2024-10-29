@@ -1,8 +1,11 @@
 package models
 
+import "strings"
+
 type DLTorrent struct {
-	Hash     string  `json:"hash"`
-	Progress float64 `json:"progress"`
+	Hash     string
+	Progress float64
+	Quit     chan struct{}
 }
 
 func (t *DLTorrent) UpdateProgress(progress float64) {
@@ -20,7 +23,7 @@ type Torrent struct {
 
 func containsKeyword(keywords []string, keyword string) bool {
 	for _, k := range keywords {
-		if k == keyword {
+		if strings.EqualFold(k, keyword) {
 			return true
 		}
 	}
