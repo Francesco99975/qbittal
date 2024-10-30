@@ -146,7 +146,7 @@ func GetTorrentProgress() echo.HandlerFunc {
 		util.Mu.RUnlock()
 
 		if !exists {
-			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Torrent Downloaded", Errors: []string{"Torrent not found"}})
+			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Torrent not found", Errors: []string{"Torrent not found"}})
 		}
 
 		type TorrentProgress struct {

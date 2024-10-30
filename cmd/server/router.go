@@ -21,7 +21,6 @@ import (
 func createRouter() *echo.Echo {
 	e := echo.New()
 	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
 	e.Use(middleware.RemoveTrailingSlash())
 	if os.Getenv("GO_ENV") == "development" {
 		e.Logger.SetLevel(log.DEBUG)

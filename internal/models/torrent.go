@@ -39,19 +39,12 @@ type Torrent struct {
 	Uploaded   time.Time `json:"uploaded"`
 }
 
-func containsKeyword(keywords []string, keyword string) bool {
-	for _, k := range keywords {
-		if strings.EqualFold(k, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
 func (t *Torrent) CalculateQuality(SearchKeywords []string) {
-	for _, keyword := range SearchKeywords {
-		if containsKeyword(t.Keywords, keyword) {
-			t.Quality++
+	for _, sk := range SearchKeywords {
+		for _, keyword := range t.Keywords {
+			if strings.Contains(strings.ToLower(keyword), strings.ToLower(sk)) {
+				t.Quality++
+			}
 		}
 	}
 }

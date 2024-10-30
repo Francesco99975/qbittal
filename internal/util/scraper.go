@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/Francesco99975/qbittal/internal/helpers"
 	"github.com/Francesco99975/qbittal/internal/models"
+
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
 	"github.com/gocolly/colly"
 	"github.com/labstack/gommon/log"
 )
@@ -27,51 +31,6 @@ func Scraper(pattern models.Pattern) {
 	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
 	torrents := make([]models.Torrent, 0)
 
-	// Pirate Bay Scraper
-	c.OnHTML("#torrents", func(e *colly.HTMLElement) {
-		if pattern.Source == models.PirateBay {
-			e.ForEach("li.list-entry", func(i int, el *colly.HTMLElement) {
-				magnetLink := el.ChildAttrs("span.item-icons>a", "href")[0]
-				title := el.ChildText("span.item-title>a")
-
-				size, err := evaluateSize(el.ChildText("span.item-size"))
-				if err != nil {
-					log.Errorf("Error while evaluating size <- %v", err)
-				}
-
-				layout := "2006-01-02"
-				uploadedRaw := el.ChildText("span.item-uploaded>label")
-				uploaded, err := time.Parse(layout, uploadedRaw)
-				if err != nil {
-					log.Errorf("Error while evaluating uploaded <- %v", err)
-				}
-
-				seeders, err := strconv.Atoi(el.ChildText("span.item-seed"))
-				if err != nil {
-					log.Errorf("Error while evaluating seeders <- %v", err)
-				}
-
-				leechers, err := strconv.Atoi(el.ChildText("span.item-leech"))
-				if err != nil {
-					log.Errorf("Error while evaluating leechers <- %v", err)
-				}
-
-				torrent := models.Torrent{
-					MagnetLink: magnetLink,
-					Keywords:   strings.Split(title, " "),
-					Size:       size,
-					Seeders:    seeders,
-					Leechers:   leechers,
-					Uploaded:   uploaded,
-				}
-
-				torrent.CalculateQuality(pattern.SearchKeywords)
-
-				torrents = append(torrents, torrent)
-			})
-		}
-	})
-
 	// Nyaa Scraper
 	c.OnHTML("table.torrent-list>tbody", func(e *colly.HTMLElement) {
 		if pattern.Source == models.Nyaa {
@@ -79,21 +38,26 @@ func Scraper(pattern models.Pattern) {
 			e.ForEach("tr", func(i int, el *colly.HTMLElement) {
 
 				magnetLink, err := nyaaMagentLinkFinder(el.ChildAttrs("td>a", "href"))
-
 				if err != nil {
 					log.Errorf("Error while finding magnet link <- %v", err)
 
 				}
+
+				log.Debugf("MagnetLink Found: %s", magnetLink)
 
 				title, err := nyaaTitleFinder(el.ChildAttrs("td>a", "title"), pattern.SearchKeywords)
 				if err != nil {
 					log.Errorf("Error while finding title <- %v", err)
 				}
 
+				log.Debugf("Title Found: %s", title)
+
 				size, err := evaluateSize(el.ChildText("td:nth-child(4)"))
 				if err != nil {
 					log.Errorf("Error while evaluating size <- %v", err)
 				}
+
+				log.Debugf("Size Found: %s", size)
 
 				layout := "2006-01-02 15:04"
 				uploadedRaw := el.ChildText("td:nth-child(5)")
@@ -102,15 +66,21 @@ func Scraper(pattern models.Pattern) {
 					log.Errorf("Error while evaluating uploaded <- %v", err)
 				}
 
+				log.Debugf("Uploaded Found: %s", uploaded)
+
 				seeders, err := strconv.Atoi(el.ChildText("td:nth-child(6)"))
 				if err != nil {
 					log.Errorf("Error while evaluating seeders <- %v", err)
 				}
 
+				log.Debugf("Seeders Found: %s", seeders)
+
 				leechers, err := strconv.Atoi(el.ChildText("td:nth-child(7)"))
 				if err != nil {
 					log.Errorf("Error while evaluating leechers <- %v", err)
 				}
+
+				log.Debugf("Leechers Found: %s", leechers)
 
 				torrent := models.Torrent{
 					MagnetLink: magnetLink,
@@ -128,14 +98,100 @@ func Scraper(pattern models.Pattern) {
 		}
 	})
 
-	err := c.Visit(fmt.Sprintf("https://%s/%s=%s", pattern.Source, evaluateSearchUrl(pattern.Source), strings.Join(pattern.QueryKeywords, "+")))
-	if err != nil {
-		log.Errorf("Error while visiting the page <- %v", err)
+	scrapingEndpoint := fmt.Sprintf("https://%s/%s=%s", pattern.Source, evaluateSearchUrl(pattern.Source), strings.Join(pattern.QueryKeywords, "+"))
+
+	log.Debugf("Scraping %s", scrapingEndpoint)
+
+	if pattern.Source == models.Nyaa {
+		err := c.Visit(scrapingEndpoint)
+		if err != nil {
+			log.Errorf("Error while visiting the page <- %v", err)
+		}
+		c.Wait()
+	} else if pattern.Source == models.PirateBay {
+		// Run Rod in headless mode
+		u := launcher.New().Headless(true).MustLaunch()
+		browser := rod.New().ControlURL(u).MustConnect()
+
+		// Open the target page
+		page := browser.MustPage(scrapingEndpoint).MustWaitLoad()
+
+		// Wait for the main list of torrents to load
+		torrentItems := page.MustElements("ol#torrents li.list-entry")
+
+		for _, el := range torrentItems {
+			// Extract the magnet link
+			potentialMagAttrs := el.MustElements("span.item-icons > a")
+			var magnetLink string
+			if len(potentialMagAttrs) > 0 {
+				magnetLink = *potentialMagAttrs[0].MustAttribute("href")
+				log.Printf("MagnetLink Found: %s", magnetLink)
+			} else {
+				log.Printf("MagnetLink not found")
+				continue
+			}
+
+			// Extract the title
+			title := strings.TrimSpace(el.MustElement("span.item-title > a").MustText())
+			log.Printf("Title Found: %s", title)
+
+			// Evaluate the size
+			sizeText, err := strconv.Atoi(*el.MustElement("span.item-size > input").MustAttribute("value"))
+			if err != nil {
+				log.Printf("Error while evaluating size: %v", err)
+			}
+
+			size := bytesToMegabytes(sizeText)
+			if err != nil {
+				log.Printf("Error while evaluating size: %v", err)
+			}
+			log.Printf("Size Found: %s", size)
+
+			// Parse the upload date
+			layout := "2006-01-02"
+			uploadedRaw := strings.TrimSpace(el.MustElement("span.item-uploaded > label").MustText())
+			uploaded, err := time.Parse(layout, uploadedRaw)
+			if err != nil {
+				log.Printf("Error while evaluating uploaded: %v", err)
+			}
+			log.Printf("Uploaded Found: %s", uploaded)
+
+			// Extract the number of seeders
+			seedersText := strings.TrimSpace(el.MustElement("span.item-seed").MustText())
+			seeders, err := strconv.Atoi(seedersText)
+			if err != nil {
+				log.Printf("Error while evaluating seeders: %v", err)
+			}
+			log.Printf("Seeders Found: %d", seeders)
+
+			// Extract the number of leechers
+			leechersText := strings.TrimSpace(el.MustElement("span.item-leech").MustText())
+			leechers, err := strconv.Atoi(leechersText)
+			if err != nil {
+				log.Printf("Error while evaluating leechers: %v", err)
+			}
+			log.Printf("Leechers Found: %d", leechers)
+
+			// Collect all data into a Torrent struct
+			torrent := models.Torrent{
+				MagnetLink: magnetLink,
+				Keywords:   strings.Split(title, " "),
+				Size:       size,
+				Seeders:    seeders,
+				Leechers:   leechers,
+				Uploaded:   uploaded,
+			}
+
+			torrent.CalculateQuality(pattern.SearchKeywords)
+
+			torrents = append(torrents, torrent)
+		}
+
+		browser.MustClose()
 	}
 
-	c.Wait()
-
-	log.Infof("Torrents found: %v", torrents)
+	log.Debugf("Number of Torrents found: %d", len(torrents))
+	prettyPrintTorrents(torrents)
 
 	if len(torrents) == 0 {
 		log.Errorf("No torrents found")
@@ -152,15 +208,24 @@ func Scraper(pattern models.Pattern) {
 		return torrent.Quality >= max && torrent.Seeders > 5 && titleMatches(strings.Join(torrent.Keywords, " "), pattern.SearchKeywords)
 	})
 
-	//Sort torrents by most recent uploaded
-	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
-		return a.Uploaded.After(b.Uploaded)
-	})
+	log.Debugf("Number of Torrents after filtering: %d", len(filteredTorrents))
+	prettyPrintTorrents(filteredTorrents)
 
 	// Sort torrents by most seeders
 	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
 		return a.Seeders > b.Seeders
 	})
+
+	log.Debug("< < < Torrents after seeders sorting > > >")
+	prettyPrintTorrents(filteredTorrents)
+
+	//Sort torrents by most recent uploaded
+	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
+		return a.Uploaded.After(b.Uploaded)
+	})
+
+	log.Debug("< < < Torrents after date sorting  > > >")
+	prettyPrintTorrents(filteredTorrents)
 
 	// Download the top torrent by making a request to the qbittorrent API
 	torrent := filteredTorrents[0]
@@ -236,9 +301,9 @@ func Scraper(pattern models.Pattern) {
 func evaluateSearchUrl(source models.Source) string {
 	switch source {
 	case models.Nyaa:
-		return "?q="
+		return "?q"
 	case models.PirateBay:
-		return "search.php?q="
+		return "search.php?q"
 	default:
 		return ""
 	}
@@ -260,6 +325,18 @@ func titleMatches(title string, searchQuery []string) bool {
 		}
 	}
 	return true
+}
+
+func prettyPrintTorrents(torrents []models.Torrent) {
+	for _, torrent := range torrents {
+		log.Debugf("Keywords: %s", strings.Join(torrent.Keywords, ", "))
+		log.Debugf("Quality: %s", torrent.Quality)
+		log.Debugf("Seeders: %d", torrent.Seeders)
+		log.Debugf("Size: %s", torrent.Size)
+		log.Debugf("Leechers: %d", torrent.Leechers)
+		log.Debugf("Uploaded: %s", torrent.Uploaded)
+		log.Debugf("----------------------------------------")
+	}
 }
 
 func evaluateSize(size string) (int, error) {
@@ -306,6 +383,11 @@ func evaluateSize(size string) (int, error) {
 
 	return int(megabytes), nil
 
+}
+
+// Convert bytes to megabytes
+func bytesToMegabytes(bytes int) int {
+	return bytes / 1024 / 1024
 }
 
 func findMaxQualityFromTorrents(torrents []models.Torrent) (int, error) {
