@@ -40,7 +40,7 @@ func AddJob(id string, schedule string, task func()) error {
 		EntryID: entryID,
 	}
 
-	log.Infof("Scheduled job with ID: %d\n", id)
+	log.Infof("Scheduled job with ID: %s\n", id)
 	return nil
 }
 

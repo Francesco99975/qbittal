@@ -1,14 +1,28 @@
 package models
 
 import (
+	"net/http"
+	"net/http/cookiejar"
 	"strings"
 	"time"
 )
 
 type DLTorrent struct {
-	Hash     string
-	Progress float64
-	Quit     chan struct{}
+	Hash       string
+	Progress   float64
+	Quit       chan struct{}
+	HttpClient *http.Client
+}
+
+func NewDLTorrent(hash string) *DLTorrent {
+	// Create a new HTTP client with a cookie jar to store cookies
+	var jar, _ = cookiejar.New(nil)
+	return &DLTorrent{
+		Hash:       hash,
+		Progress:   0.0,
+		Quit:       make(chan struct{}),
+		HttpClient: &http.Client{Jar: jar},
+	}
 }
 
 func (t *DLTorrent) UpdateProgress(progress float64) {

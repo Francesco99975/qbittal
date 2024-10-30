@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Francesco99975/qbittal/internal/api"
@@ -22,7 +23,13 @@ func createRouter() *echo.Echo {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.RemoveTrailingSlash())
-	e.Logger.SetLevel(log.INFO)
+	if os.Getenv("GO_ENV") == "development" {
+		e.Logger.SetLevel(log.DEBUG)
+		log.SetLevel(log.DEBUG)
+	} else {
+		e.Logger.SetLevel(log.INFO)
+		log.SetLevel(log.INFO)
+	}
 	e.GET("/healthcheck", func(c echo.Context) error {
 		time.Sleep(5 * time.Second)
 		return c.JSON(http.StatusOK, "OK")

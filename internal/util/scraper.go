@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"regexp"
@@ -23,10 +22,6 @@ import (
 
 var DownloadingTorrents = make(map[string]*models.DLTorrent, 0)
 var Mu = &sync.RWMutex{}
-
-// Create a new HTTP client with a cookie jar to store cookies
-var jar, _ = cookiejar.New(nil)
-var client = &http.Client{Jar: jar}
 
 func Scraper(pattern models.Pattern) {
 	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
@@ -176,11 +171,8 @@ func Scraper(pattern models.Pattern) {
 	}
 
 	Mu.Lock()
-	DownloadingTorrents[pattern.ID] = &models.DLTorrent{
-		Hash:     hash,
-		Progress: 0.0,
-		Quit:     make(chan struct{}),
-	}
+	DownloadingTorrents[pattern.ID] = models.NewDLTorrent(hash)
+	client := DownloadingTorrents[pattern.ID].HttpClient
 	Mu.Unlock()
 
 	log.Infof("Chosen torrent: %v", torrent)
@@ -362,19 +354,24 @@ func trackProgress(id string) {
 		Mu.RUnlock()
 		return
 	}
-	torrentHash := torrent.Hash
-	quit := torrent.Quit
 	Mu.RUnlock()
 	for {
 		select {
-		case <-quit:
+		case <-torrent.Quit:
+			log.Debugf("Quitting torrent %s", torrent.Hash)
 			return
 		default:
-			progress, isComplete := getTorrentProgress(torrentHash)
+			progress, isComplete, err := getTorrentProgress(torrent.Hash, torrent.HttpClient)
+			if err != nil {
+				log.Errorf("Failed to get torrent progress <- %v", err)
+				return
+			}
 			if isComplete {
+				log.Infof("Torrent %s completed", torrent.Hash)
 				DeleteTorrent(id, false)
 				return
 			}
+			log.Debugf("Torrent %s progress update to %f", torrent.Hash, progress)
 			Mu.Lock()
 			DownloadingTorrents[id].UpdateProgress(progress)
 			Mu.Unlock()
@@ -384,43 +381,55 @@ func trackProgress(id string) {
 }
 
 // Get progress for specific torrent
-func getTorrentProgress(torrentHash string) (float64, bool) {
+func getTorrentProgress(torrentHash string, client *http.Client) (float64, bool, error) {
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 	url := fmt.Sprintf("%s/api/v2/torrents/info?hashes=%s", qbittorrentAPI, torrentHash)
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0.0, false, fmt.Errorf("failed to create request <- %v", err)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		return 0, false
+		return 0.0, false, fmt.Errorf("request failed with status %d for hash %s <- %v", resp.StatusCode, torrentHash, err)
 	}
 	defer resp.Body.Close()
 
 	var torrents []map[string]interface{}
-	body, _ := io.ReadAll(resp.Body)
-	_ = json.Unmarshal(body, &torrents)
-	if len(torrents) == 0 {
-		return 0, false
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0.0, false, fmt.Errorf("failed to read response body <- %v", err)
 	}
+	err = json.Unmarshal(body, &torrents)
+	if err != nil {
+		return 0.0, false, fmt.Errorf("failed to unmarshal response body <- %v", err)
+	}
+	if len(torrents) == 0 {
+		return 0.0, false, fmt.Errorf("no downloading torrents found for hash %s", torrentHash)
+	}
+
+	log.Debugf("LEN Torrents: %d", len(torrents))
+	log.Debugf("Torrent Hash: %s", torrents[0]["hash"])
+	log.Debugf("Torrent State: %s", torrents[0]["state"])
+	log.Debugf("Torrent Progress: %f", torrents[0]["progress"])
 
 	progress := torrents[0]["progress"].(float64)
 	isComplete := torrents[0]["state"] == "stalledUP" || torrents[0]["state"] == "pausedUP"
-	return progress, isComplete
+	return progress, isComplete, nil
 }
 
 // Delete torrent after completion
 func DeleteTorrent(id string, deleteFiles bool) {
 	Mu.RLock()
 	torrentHash := DownloadingTorrents[id].Hash
+	client := DownloadingTorrents[id].HttpClient
 	Mu.RUnlock()
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 	dfStr := "false"
 	if deleteFiles {
 		dfStr = "true"
 	}
-	Mu.Lock()
-	close(DownloadingTorrents[id].Quit)
-	delete(DownloadingTorrents, id)
-	Mu.Unlock()
+
 	endpoint := fmt.Sprintf("%s/api/v2/torrents/delete", qbittorrentAPI)
 	data := url.Values{}
 	data.Set("hashes", torrentHash)
@@ -461,4 +470,9 @@ func DeleteTorrent(id string, deleteFiles bool) {
 		log.Errorf("logout failed with status code: %d", resp.StatusCode)
 		return
 	}
+
+	Mu.Lock()
+	close(DownloadingTorrents[id].Quit)
+	delete(DownloadingTorrents, id)
+	Mu.Unlock()
 }
