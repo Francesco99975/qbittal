@@ -1,6 +1,9 @@
 package models
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type DLTorrent struct {
 	Hash     string
@@ -13,12 +16,13 @@ func (t *DLTorrent) UpdateProgress(progress float64) {
 }
 
 type Torrent struct {
-	MagnetLink string   `json:"magnet_link"`
-	Keywords   []string `json:"keywords"`
-	Seeders    int      `json:"seeders"`
-	Leechers   int      `json:"leechers"`
-	Size       int      `json:"size"` // size in Mega Bytes
-	Quality    int      `json:"quality"`
+	MagnetLink string    `json:"magnet_link"`
+	Keywords   []string  `json:"keywords"`
+	Seeders    int       `json:"seeders"`
+	Leechers   int       `json:"leechers"`
+	Size       int       `json:"size"` // size in Mega Bytes
+	Quality    int       `json:"quality"`
+	Uploaded   time.Time `json:"uploaded"`
 }
 
 func containsKeyword(keywords []string, keyword string) bool {

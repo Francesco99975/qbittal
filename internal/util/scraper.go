@@ -32,8 +32,55 @@ func Scraper(pattern models.Pattern) {
 	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
 	torrents := make([]models.Torrent, 0)
 
+	// Pirate Bay Scraper
+	c.OnHTML("#torrents", func(e *colly.HTMLElement) {
+		if pattern.Source == models.PirateBay {
+			e.ForEach("li.list-entry", func(i int, el *colly.HTMLElement) {
+				magnetLink := el.ChildAttrs("span.item-icons>a", "href")[0]
+				title := el.ChildText("span.item-title>a")
+
+				size, err := evaluateSize(el.ChildText("span.item-size"))
+				if err != nil {
+					log.Errorf("Error while evaluating size <- %v", err)
+				}
+
+				layout := "2006-01-02"
+				uploadedRaw := el.ChildText("span.item-uploaded>label")
+				uploaded, err := time.Parse(layout, uploadedRaw)
+				if err != nil {
+					log.Errorf("Error while evaluating uploaded <- %v", err)
+				}
+
+				seeders, err := strconv.Atoi(el.ChildText("span.item-seed"))
+				if err != nil {
+					log.Errorf("Error while evaluating seeders <- %v", err)
+				}
+
+				leechers, err := strconv.Atoi(el.ChildText("span.item-leech"))
+				if err != nil {
+					log.Errorf("Error while evaluating leechers <- %v", err)
+				}
+
+				torrent := models.Torrent{
+					MagnetLink: magnetLink,
+					Keywords:   strings.Split(title, " "),
+					Size:       size,
+					Seeders:    seeders,
+					Leechers:   leechers,
+					Uploaded:   uploaded,
+				}
+
+				torrent.CalculateQuality(pattern.SearchKeywords)
+
+				torrents = append(torrents, torrent)
+			})
+		}
+	})
+
+	// Nyaa Scraper
 	c.OnHTML("table.torrent-list>tbody", func(e *colly.HTMLElement) {
 		if pattern.Source == models.Nyaa {
+
 			e.ForEach("tr", func(i int, el *colly.HTMLElement) {
 
 				magnetLink, err := nyaaMagentLinkFinder(el.ChildAttrs("td>a", "href"))
@@ -53,6 +100,13 @@ func Scraper(pattern models.Pattern) {
 					log.Errorf("Error while evaluating size <- %v", err)
 				}
 
+				layout := "2006-01-02 15:04"
+				uploadedRaw := el.ChildText("td:nth-child(5)")
+				uploaded, err := time.Parse(layout, uploadedRaw)
+				if err != nil {
+					log.Errorf("Error while evaluating uploaded <- %v", err)
+				}
+
 				seeders, err := strconv.Atoi(el.ChildText("td:nth-child(6)"))
 				if err != nil {
 					log.Errorf("Error while evaluating seeders <- %v", err)
@@ -69,6 +123,7 @@ func Scraper(pattern models.Pattern) {
 					Size:       size,
 					Seeders:    seeders,
 					Leechers:   leechers,
+					Uploaded:   uploaded,
 				}
 
 				torrent.CalculateQuality(pattern.SearchKeywords)
@@ -99,7 +154,12 @@ func Scraper(pattern models.Pattern) {
 	}
 
 	filteredTorrents := helpers.FilteredSlice(torrents, func(torrent models.Torrent) bool {
-		return torrent.Quality >= max
+		return torrent.Quality >= max && torrent.Seeders > 5 && titleMatches(strings.Join(torrent.Keywords, " "), pattern.SearchKeywords)
+	})
+
+	//Sort torrents by most recent uploaded
+	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
+		return a.Uploaded.After(b.Uploaded)
 	})
 
 	// Sort torrents by most seeders
@@ -201,15 +261,13 @@ func nyaaMagentLinkFinder(links []string) (string, error) {
 	return "", fmt.Errorf("no magnet link found")
 }
 
-func nyaaTitleFinder(titles []string, searchQuery []string) (string, error) {
-	for _, title := range titles {
-		for _, query := range searchQuery {
-			if strings.Contains(title, query) {
-				return title, nil
-			}
+func titleMatches(title string, searchQuery []string) bool {
+	for _, keyword := range searchQuery {
+		if !strings.Contains(title, keyword) {
+			return false
 		}
 	}
-	return "", fmt.Errorf("no title found")
+	return true
 }
 
 func evaluateSize(size string) (int, error) {
@@ -266,6 +324,17 @@ func findMaxQualityFromTorrents(torrents []models.Torrent) (int, error) {
 		}
 	}
 	return maxQuality, nil
+}
+
+func nyaaTitleFinder(titles []string, searchQuery []string) (string, error) {
+	for _, title := range titles {
+		for _, query := range searchQuery {
+			if strings.Contains(title, query) {
+				return title, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no title found")
 }
 
 // extractHash extracts the torrent hash from a magnet link
