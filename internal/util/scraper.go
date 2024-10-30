@@ -227,6 +227,11 @@ func Scraper(pattern models.Pattern) {
 	log.Debug("< < < Torrents after date sorting  > > >")
 	prettyPrintTorrents(filteredTorrents)
 
+	if len(filteredTorrents) == 0 {
+		log.Errorf("No torrents found after filtering")
+		return
+	}
+
 	// Download the top torrent by making a request to the qbittorrent API
 	torrent := filteredTorrents[0]
 
