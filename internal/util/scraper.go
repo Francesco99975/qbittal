@@ -27,7 +27,7 @@ import (
 var DownloadingTorrents = make(map[string]*models.DLTorrent, 0)
 var Mu = &sync.RWMutex{}
 
-func Scraper(pattern models.Pattern) {
+func Scraper(pattern models.Pattern) error {
 	c := colly.NewCollector(colly.AllowURLRevisit(), colly.MaxDepth(100))
 	torrents := make([]models.Torrent, 0)
 
@@ -91,9 +91,12 @@ func Scraper(pattern models.Pattern) {
 					Uploaded:   uploaded,
 				}
 
-				torrent.CalculateQuality(pattern.SearchKeywords)
-
-				torrents = append(torrents, torrent)
+				if torrent.IsValid() {
+					torrent.CalculateQuality(pattern.SearchKeywords)
+					torrents = append(torrents, torrent)
+				} else {
+					log.Error("Skipping... Torrent NOT valid")
+				}
 			})
 		}
 	})
@@ -105,7 +108,7 @@ func Scraper(pattern models.Pattern) {
 	if pattern.Source == models.Nyaa {
 		err := c.Visit(scrapingEndpoint)
 		if err != nil {
-			log.Errorf("Error while visiting the page <- %v", err)
+			return fmt.Errorf("Error while visiting the page <- %v", err)
 		}
 		c.Wait()
 	} else if pattern.Source == models.PirateBay {
@@ -125,52 +128,52 @@ func Scraper(pattern models.Pattern) {
 			var magnetLink string
 			if len(potentialMagAttrs) > 0 {
 				magnetLink = *potentialMagAttrs[0].MustAttribute("href")
-				log.Printf("MagnetLink Found: %s", magnetLink)
+				log.Debugf("MagnetLink Found: %s", magnetLink)
 			} else {
-				log.Printf("MagnetLink not found")
+				log.Errorf("MagnetLink not found")
 				continue
 			}
 
 			// Extract the title
 			title := strings.TrimSpace(el.MustElement("span.item-title > a").MustText())
-			log.Printf("Title Found: %s", title)
+			log.Debugf("Title Found: %s", title)
 
 			// Evaluate the size
 			sizeText, err := strconv.Atoi(*el.MustElement("span.item-size > input").MustAttribute("value"))
 			if err != nil {
-				log.Printf("Error while evaluating size: %v", err)
+				log.Errorf("Error while evaluating size: %v", err)
 			}
 
 			size := bytesToMegabytes(sizeText)
 			if err != nil {
-				log.Printf("Error while evaluating size: %v", err)
+				log.Errorf("Error while evaluating size: %v", err)
 			}
-			log.Printf("Size Found: %s", size)
+			log.Debugf("Size Found: %s", size)
 
 			// Parse the upload date
 			layout := "2006-01-02"
 			uploadedRaw := strings.TrimSpace(el.MustElement("span.item-uploaded > label").MustText())
 			uploaded, err := time.Parse(layout, uploadedRaw)
 			if err != nil {
-				log.Printf("Error while evaluating uploaded: %v", err)
+				log.Errorf("Error while evaluating uploaded: %v", err)
 			}
-			log.Printf("Uploaded Found: %s", uploaded)
+			log.Debugf("Uploaded Found: %s", uploaded)
 
 			// Extract the number of seeders
 			seedersText := strings.TrimSpace(el.MustElement("span.item-seed").MustText())
 			seeders, err := strconv.Atoi(seedersText)
 			if err != nil {
-				log.Printf("Error while evaluating seeders: %v", err)
+				log.Errorf("Error while evaluating seeders: %v", err)
 			}
-			log.Printf("Seeders Found: %d", seeders)
+			log.Debugf("Seeders Found: %d", seeders)
 
 			// Extract the number of leechers
 			leechersText := strings.TrimSpace(el.MustElement("span.item-leech").MustText())
 			leechers, err := strconv.Atoi(leechersText)
 			if err != nil {
-				log.Printf("Error while evaluating leechers: %v", err)
+				log.Errorf("Error while evaluating leechers: %v", err)
 			}
-			log.Printf("Leechers Found: %d", leechers)
+			log.Debugf("Leechers Found: %d", leechers)
 
 			// Collect all data into a Torrent struct
 			torrent := models.Torrent{
@@ -182,9 +185,12 @@ func Scraper(pattern models.Pattern) {
 				Uploaded:   uploaded,
 			}
 
-			torrent.CalculateQuality(pattern.SearchKeywords)
-
-			torrents = append(torrents, torrent)
+			if torrent.IsValid() {
+				torrent.CalculateQuality(pattern.SearchKeywords)
+				torrents = append(torrents, torrent)
+			} else {
+				log.Error("Skipping... Torrent NOT valid")
+			}
 		}
 
 		browser.MustClose()
@@ -194,14 +200,13 @@ func Scraper(pattern models.Pattern) {
 	prettyPrintTorrents(torrents)
 
 	if len(torrents) == 0 {
-		log.Errorf("No torrents found")
-		return
+		return fmt.Errorf("No torrents found")
 	}
 
 	// Filter out torrents with a lower thatn maximum quality
 	max, err := findMaxQualityFromTorrents(torrents)
 	if err != nil {
-		log.Errorf("Error while finding max quality <- %v", err)
+		return fmt.Errorf("Error while finding max quality <- %v", err)
 	}
 
 	filteredTorrents := helpers.FilteredSlice(torrents, func(torrent models.Torrent) bool {
@@ -228,8 +233,8 @@ func Scraper(pattern models.Pattern) {
 	prettyPrintTorrents(filteredTorrents)
 
 	if len(filteredTorrents) == 0 {
-		log.Errorf("No torrents found after filtering")
-		return
+		return fmt.Errorf("No torrents found after filtering")
+
 	}
 
 	// Download the top torrent by making a request to the qbittorrent API
@@ -237,7 +242,7 @@ func Scraper(pattern models.Pattern) {
 
 	hash, err := extractHash(torrent.MagnetLink)
 	if err != nil {
-		log.Errorf("Error while extracting hash <- %v", err)
+		return fmt.Errorf("Error while extracting hash <- %v", err)
 	}
 
 	Mu.Lock()
@@ -257,19 +262,18 @@ func Scraper(pattern models.Pattern) {
 
 	req, err := http.NewRequest("POST", loginURL, bytes.NewBufferString(loginData.Encode()))
 	if err != nil {
-		log.Errorf("failed to create login request: %w", err)
+		return fmt.Errorf("failed to create login request <- %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Errorf("failed to login: %w", err)
+		return fmt.Errorf("failed to login <- %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Errorf("login failed with status code: %d", resp.StatusCode)
-		return
+		return fmt.Errorf("login failed with status code <- %d", resp.StatusCode)
 	}
 
 	// Step 2: Add Torrent
@@ -280,27 +284,26 @@ func Scraper(pattern models.Pattern) {
 
 	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
 	if err != nil {
-		log.Errorf("failed to create add torrent request: %w", err)
-		return
+		return fmt.Errorf("failed to create add torrent request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err = client.Do(req)
 	if err != nil {
-		log.Errorf("failed to add torrent: %w", err)
-		return
+		return fmt.Errorf("failed to add torrent <- %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Errorf("failed to add torrent: %d - %s", resp.StatusCode, string(body))
-		return
+		return fmt.Errorf("failed to add torrent <- Status Code: %d - Body: %s", resp.StatusCode, string(body))
 	}
 
 	go trackProgress(pattern.ID)
 
 	log.Infof("Torrent added successfully")
+
+	return nil
 }
 
 func evaluateSearchUrl(source models.Source) string {

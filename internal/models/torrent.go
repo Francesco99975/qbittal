@@ -39,6 +39,10 @@ type Torrent struct {
 	Uploaded   time.Time `json:"uploaded"`
 }
 
+func (t *Torrent) IsValid() bool {
+	return t.Seeders > 0 && t.Size > 0 && len(t.Keywords) > 0 && len(t.MagnetLink) > 0 && strings.Contains(t.MagnetLink, "magnet")
+}
+
 func (t *Torrent) CalculateQuality(SearchKeywords []string) {
 	for _, sk := range SearchKeywords {
 		for _, keyword := range t.Keywords {

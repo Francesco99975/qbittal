@@ -45,7 +45,12 @@ func CreatePattern() echo.HandlerFunc {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating pattern", Errors: []string{err.Error()}})
 		}
 
-		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireHour, newPattern.FireMinute), func() { util.Scraper(newPattern) })
+		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireHour, newPattern.FireMinute), func() {
+			err = util.Scraper(newPattern)
+			if err != nil {
+				log.Errorf("Error while executing scheduled scraper SET after add <- %v", err)
+			}
+		})
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating job", Errors: []string{err.Error()}})
 		}
@@ -87,7 +92,12 @@ func UpdatePattern() echo.HandlerFunc {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating pattern", Errors: []string{err.Error()}})
 		}
 
-		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireHour, pattern.FireMinute), func() { util.Scraper(pattern) })
+		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireHour, pattern.FireMinute), func() {
+			err = util.Scraper(pattern)
+			if err != nil {
+				log.Errorf("Error while executing scheduled scraper SET after update <- %v", err)
+			}
+		})
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating job", Errors: []string{err.Error()}})
 		}
@@ -132,7 +142,11 @@ func ExecutePattern() echo.HandlerFunc {
 			return c.JSON(404, models.JSONErrorResponse{Code: 404, Message: "Pattern not found", Errors: []string{err.Error()}})
 		}
 
-		util.Scraper(pattern)
+		err = util.Scraper(pattern)
+		if err != nil {
+			log.Errorf("Error while executing pattern <- %w", err)
+			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while executing pattern", Errors: []string{err.Error()}})
+		}
 		return c.JSON(200, "OK")
 	}
 }
