@@ -31,6 +31,7 @@ func main() {
 
 	go func() {
 		e.Logger.Infof("Running Environment: %s", os.Getenv("GO_ENV"))
+		e.Logger.Infof("Qbittorrent Server: %s", os.Getenv("QBITTORRENT_API"))
 		if adminPassword != "" {
 			e.Logger.Infof("Admin password: %s", adminPassword)
 		}

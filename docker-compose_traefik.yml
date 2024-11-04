@@ -23,18 +23,34 @@ services:
       - WEBUI_PORT=8032
       - TORRENTING_PORT=6881
     volumes:
-      - /path/to/qbittorrent/config:/config
       - /mnt/nas/media:/downloads
     ports:
       - 8032:8032 # Web UI port mapping
       - 6881:6881 # Torrent port for TCP connections
       - 6881:6881/udp # Torrent port for UDP connections
+  qdb:
+    image: postgres:15.3-alpine
+    container_name: qdb
+    restart: unless-stopped
+    labels:
+      - traefik.enable=false
+    networks:
+      - qbittalnet
+    env_file:
+      - dbp.env
+    ports:
+      - "5439:5432"
+    volumes:
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql
+      - qbpgdata:/var/lib/postgresql/data
+      - qbpgconf:/etc/postgresql
+      - qbpglog:/var/log/postgresql
   qbittal:
     depends_on: [qbittorrent]
     container_name: qbittal
     image: qbittal
     restart: unless-stopped
-    # envinronment:
+    # environment:
     #   - QBITTORRENT_API=https://qbittorrent.example.com - Defaults to http://qbitt
     #   - QBITTORRENT_USERNAME=admin
     #   - QBITTORRENT_PASSWORD=admin
@@ -58,3 +74,11 @@ networks:
   qbittalnet:
     driver: bridge
     external: false
+
+volumes:
+  qbpgdata:
+    driver: local
+  qbpgconf:
+    driver: local
+  qbpglog:
+    driver: local

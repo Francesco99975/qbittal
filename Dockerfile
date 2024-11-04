@@ -20,6 +20,7 @@ WORKDIR /go/bin
 
 COPY --from=build /go/src/app/bin /go/bin
 COPY --from=build /go/src/app/.env /go/bin/
+COPY --from=build /go/src/app/sql /go/bin/sql
 COPY --from=build /go/src/app/static /go/bin/static
 
 EXPOSE 8061

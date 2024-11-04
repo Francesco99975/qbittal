@@ -1,0 +1,48 @@
+services:
+  qbittorrent:
+    image: linuxserver/qbittorrent
+    container_name: qbitt
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+      - UMASK_SET=022
+      - WEBUI_PORT=8032
+      - TORRENTING_PORT=6881
+    volumes:
+      - ./tmp:/downloads
+    ports:
+      - 8032:8032 # Web UI port mapping
+      - 6881:6881 # Torrent port for TCP connections
+      - 6881:6881/udp # Torrent port for UDP connections
+  qdb:
+    image: postgres:15.3-alpine
+    container_name: qdb
+    restart: unless-stopped
+    env_file:
+      - dbp.env
+    ports:
+      - "5439:5432"
+    volumes:
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql
+      - qbpgdata:/var/lib/postgresql/data
+      - qbpgconf:/etc/postgresql
+      - qbpglog:/var/log/postgresql
+  qbittal:
+    depends_on: [qbittorrent, qdb]
+    container_name: qbittal
+    image: qbittal
+    restart: unless-stopped
+    environment:
+      - QBITTORRENT_API=http://qbitt
+    ports:
+      - 8061:8061
+
+volumes:
+  qbpgdata:
+    driver: local
+  qbpgconf:
+    driver: local
+  qbpglog:
+    driver: local
