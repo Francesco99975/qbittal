@@ -20,6 +20,11 @@ func main() {
 
 	adminPassword := models.Setup(os.Getenv("DSN"))
 
+	err = boot.VerifyQbittorrentConnection()
+	if err != nil {
+		panic(err)
+	}
+
 	patterns, err := models.GetPatterns()
 	if err != nil {
 		panic(err)

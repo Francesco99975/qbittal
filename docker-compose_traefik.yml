@@ -5,12 +5,12 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.qbitt.rule=Host(`qbitt.zimbian.sh`)"
+      - "traefik.http.routers.qbitt.rule=Host(`qbitt.example.com`)"
       - "traefik.http.routers.qbitt.entrypoints=web,websecure"
       - "traefik.http.routers.qbitt.tls=true"
       - "traefik.http.services.qbitt.loadbalancer.server.port=8032"
       - "traefik.http.routers.qbitt.tls.certresolver=stepca"
-      - "traefik.http.routers.qbitt.tls.domains[0].main=qbitt.zimbian.sh"
+      - "traefik.http.routers.qbitt.tls.domains[0].main=qbitt.example.com"
       - "traefik.port=80"
     networks:
       - proxy
@@ -23,7 +23,8 @@ services:
       - WEBUI_PORT=8032
       - TORRENTING_PORT=6881
     volumes:
-      - /mnt/nas/media:/downloads
+      - ./config:/config
+      - /path/to/downloads:/downloads
     ports:
       - 8032:8032 # Web UI port mapping
       - 6881:6881 # Torrent port for TCP connections
@@ -46,16 +47,16 @@ services:
       - qbpgconf:/etc/postgresql
       - qbpglog:/var/log/postgresql
   qbittal:
-    depends_on: [qbittorrent]
+    depends_on: [qbittorrent, qdb]
     container_name: qbittal
     image: qbittal
     restart: unless-stopped
-    # environment:
-    #   - QBITTORRENT_API=https://qbittorrent.example.com - Defaults to http://qbitt
-    #   - QBITTORRENT_USERNAME=admin
-    #   - QBITTORRENT_PASSWORD=admin
+    environment:
+      - QBITTORRENT_API=https://qbitt
+      - QBITTORRENT_USER=admin
+      - QBITTORRENT_PASSWORD=admin
     labels:
-      - traefik.http.routers.qbittal.rule=Host(`qbittal.zimbian.sh`)
+      - traefik.http.routers.qbittal.rule=Host(`qbittal.example.com`)
       - traefik.http.routers.qbittal.entrypoints=web,websecure
       - traefik.http.routers.qbittal.service=qbittal
       - traefik.http.services.qbittal.loadbalancer.server.port=8061

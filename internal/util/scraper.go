@@ -1,8 +1,6 @@
 package util
 
 import (
-	"bytes"
-
 	"encoding/json"
 	"fmt"
 	"io"
@@ -252,51 +250,16 @@ func Scraper(pattern models.Pattern) error {
 
 	log.Infof("Chosen torrent: %v", torrent)
 
-	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
-
-	// Step 1: Sign In
-	loginURL := fmt.Sprintf("%s/api/v2/auth/login", qbittorrentAPI)
-	loginData := url.Values{}
-	loginData.Set("username", os.Getenv("QBITTORRENT_USERNAME"))
-	loginData.Set("password", os.Getenv("QBITTORRENT_PASSWORD"))
-
-	req, err := http.NewRequest("POST", loginURL, bytes.NewBufferString(loginData.Encode()))
+	// Step 1: Login
+	err = QbittLogin(client)
 	if err != nil {
-		return fmt.Errorf("failed to create login request <- %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to login <- %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("login failed with status code <- %d", resp.StatusCode)
+		return fmt.Errorf("failed to login to qbittorrent <- %w", err)
 	}
 
 	// Step 2: Add Torrent
-	addTorrentURL := fmt.Sprintf("%s/api/v2/torrents/add", qbittorrentAPI)
-	addTorrentData := url.Values{}
-	addTorrentData.Set("urls", torrent.MagnetLink)
-	addTorrentData.Set("savepath", pattern.DownloadPath)
-
-	req, err = http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
+	err = QbittAddTorrent(client, torrent, pattern.DownloadPath)
 	if err != nil {
-		return fmt.Errorf("failed to create add torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err = client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to add torrent <- %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to add torrent <- Status Code: %d - Body: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("failed to add torrent to qbittorrent <- %w", err)
 	}
 
 	go trackProgress(pattern.ID)
@@ -514,51 +477,20 @@ func DeleteTorrent(id string, deleteFiles bool) {
 	torrentHash := DownloadingTorrents[id].Hash
 	client := DownloadingTorrents[id].HttpClient
 	Mu.RUnlock()
-	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
+
 	dfStr := "false"
 	if deleteFiles {
 		dfStr = "true"
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v2/torrents/delete", qbittorrentAPI)
-	data := url.Values{}
-	data.Set("hashes", torrentHash)
-	data.Set("deleteFiles", dfStr)
-	// url := fmt.Sprintf("%s/api/v2/torrents/delete?hashes=%s&deleteFiles=%s", qbittorrentAPI, torrentHash, dfStr)
-	req, _ := http.NewRequest("POST", endpoint, bytes.NewBufferString(data.Encode()))
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := client.Do(req)
+	err := QbittDeleteTorrent(client, torrentHash, dfStr)
 	if err != nil {
 		log.Errorf("failed to delete torrent: %w", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Errorf("failed to delete torrent: %d - %s", resp.StatusCode, string(body))
 	}
 
-	// Step 3: Log Out
-	logoutURL := fmt.Sprintf("%s/api/v2/auth/logout", qbittorrentAPI)
-	req, err = http.NewRequest("POST", logoutURL, nil)
+	err = QbittLogout(client)
 	if err != nil {
-		log.Errorf("failed to create logout request: %w", err)
-		return
-	}
-
-	resp, err = client.Do(req)
-	if err != nil {
-		log.Errorf("failed to logout: %w", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Errorf("logout failed with status code: %d", resp.StatusCode)
-		return
+		log.Errorf("failed to logout from qbittorrent: %w", err)
 	}
 
 	Mu.Lock()
