@@ -33,7 +33,7 @@ services:
   qbittal:
     depends_on: [qbittorrent, qdb]
     container_name: qbittal
-    image: qbittal
+    image: kalairen/qbittal:latest
     restart: unless-stopped
     environment:
       - QBITTORRENT_API=http://qbitt:8038

@@ -15,7 +15,7 @@ services:
   qbittal:
     depends_on: [qdb]
     container_name: qbittal
-    image: qbittal
+    image: kalairen/qbittal:latest
     restart: unless-stoppeds
     environment:
       - QBITTORRENT_API=https://qbittorrent.example.com
