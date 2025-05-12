@@ -70,4 +70,4 @@ ci: test lint vet fmt coverage ## Run all checks (tests, lint, vet, format)
 
 .PHONY: staging
 staging: ## Deploy to staging environment
-	scp $(PROJECT_NAME).tar docker-compose_traefik.yml kalairen@zimbian.sh:~/.services/qbittal
+	scp $(PROJECT_NAME).tar docker-compose_local.yml kalairen@zimbian.sh:~/.services/qbittal

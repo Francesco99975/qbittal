@@ -23,3 +23,4 @@ views/**/*.txt
 reports/*
 age-key*
 *.tar.gz
+*_local*
