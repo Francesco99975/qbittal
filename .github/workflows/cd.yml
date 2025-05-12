@@ -1,0 +1,97 @@
+name: CD
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # Create the .prod.env file from GitHub secrets
+      - name: Create production environment file
+        run: |
+          echo "GO_ENV=${{ secrets.GO_ENV }}" > .prod.env
+          echo "PORT=${{ secrets.PORT }}" >> .prod.env
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .prod.env
+          echo "DSN=${{ secrets.DSN }}" >> .prod.env
+          echo "QBITTORRENT_API=${{ secrets.QBITTORRENT_API }}" >> .prod.env
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.4'
+          cache: true
+
+      - name: Build Docker image
+        run: make build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qbittal-image
+          path: qbittal.tar
+          retention-days: 7
+
+      - name: Upload docker-compose file
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose
+          path: docker-compose.yml
+          retention-days: 7
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://qbittal.urx.ink
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: qbittal-image
+
+      - name: Download docker-compose
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-compose
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan urx.ink >> ~/.ssh/known_hosts
+
+      - name: Deploy to production
+        run: |
+          # Transfer files to production server
+          scp qbittal.tar docker-compose.yml kalairen@urx.ink:~/apps/qbittal/
+
+          # SSH into server and deploy
+          ssh __username__@urx.ink << 'EOF'
+            cd ~/apps/qbittal
+            docker load < qbittal.tar
+            docker compose up -d
+            docker system prune -f
+          EOF
+
+      - name: Verify deployment
+        run: |
+          # Give the service some time to start
+          sleep 10
+          curl -sSf https://qbittal.urx.ink/healthcheck || exit 1

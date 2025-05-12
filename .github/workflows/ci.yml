@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.4'
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+
+      - name: Run make ci
+        run: make ci
+
+      - name: Install coverage tools
+        run: |
+          go install github.com/axw/gocov/gocov@latest
+          go install github.com/AlekSi/gocov-xml@latest
+
+      - name: Convert coverage to XML
+        run: |
+          gocov convert coverage.out | gocov-xml > coverage.xml
+
+      - name: Generate coverage report
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          format: markdown
+          output: both
+
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          header: test-coverage
+          recreate: true
+          path: code-coverage-results.md
+
+      - name: Generate Coverage Badge
+        uses: tj-actions/coverage-badge-go@v2
+        with:
+          filename: coverage.out
+
+      - name: Save coverage badge
+        uses: tj-actions/coverage-badge-go@v2
+        with:
+          filename: coverage.out
+          pathname: .github/badges/coverage.svg
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    steps:
+      - uses: actions/checkout@v3
+
+      # Create the .prod.env file from GitHub secrets
+      - name: Create production environment file
+        run: |
+          echo "GO_ENV=${{ secrets.GO_ENV }}" > .prod.env
+          echo "PORT=${{ secrets.PORT }}" >> .prod.env
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .prod.env
+          echo "DSN=${{ secrets.DSN }}" >> .prod.env
+          echo "QBITTORRENT_API=${{ secrets.QBITTORRENT_API }}" >> .prod.env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        run: make build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go_boilerplate-image
+          path: go_boilerplate.tar
+          retention-days: 1
