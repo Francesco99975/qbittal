@@ -14,3 +14,12 @@ data
 build
 *.tar
 tmp
+seeds
+report.txt
+*dev.sh
+views/**/*.txt
+*.acl
+*.out
+reports/*
+age-key*
+*.tar.gz
