@@ -13,12 +13,8 @@ func Index() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		data := models.GetDefaultSite("Home")
 
-		html, err := helpers.GeneratePage(views.Index(data))
+		html := helpers.MustRenderHTML(views.Index(data))
 
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "Could not parse page home")
-		}
-
-		return c.Blob(200, "text/html; charset=utf-8", html)
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", html)
 	}
 }
