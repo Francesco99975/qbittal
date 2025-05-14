@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Francesco99975/qbittal/cmd/boot"
 	"github.com/Francesco99975/qbittal/internal/api"
+	"github.com/Francesco99975/qbittal/internal/connections"
 	"github.com/Francesco99975/qbittal/internal/controllers"
 	"github.com/Francesco99975/qbittal/internal/middlewares"
 	"github.com/Francesco99975/qbittal/internal/models"
@@ -21,7 +23,7 @@ import (
 	"github.com/labstack/gommon/log"
 )
 
-func createRouter() *echo.Echo {
+func createRouter(ctx context.Context) *echo.Echo {
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.RemoveTrailingSlash())
@@ -47,6 +49,19 @@ func createRouter() *echo.Echo {
 
 	e.Static("/assets", "./static")
 
+	wsManager := connections.NewManager(ctx)
+
+	go wsManager.Run()
+
+	e.GET("/ws", wsManager.ServeWS)
+
+	patterns, err := models.GetPatterns()
+	if err != nil {
+		panic(err)
+	}
+
+	boot.SetupCronJobs(patterns, wsManager)
+
 	web := e.Group("")
 
 	web.GET("/", controllers.Index())
@@ -58,8 +73,8 @@ func createRouter() *echo.Echo {
 	admin.GET("/execute/:id", api.ExecutePattern(), middlewares.IsAuthenticatedAdmin())
 	admin.GET("/progress/:id", api.GetTorrentProgress(), middlewares.IsAuthenticatedAdmin())
 	admin.DELETE("/execute/:id", api.DeleteTorrent(), middlewares.IsAuthenticatedAdmin())
-	admin.POST("/patterns", api.CreatePattern(), middlewares.IsAuthenticatedAdmin())
-	admin.PUT("/patterns/:id", api.UpdatePattern(), middlewares.IsAuthenticatedAdmin())
+	admin.POST("/patterns", api.CreatePattern(wsManager), middlewares.IsAuthenticatedAdmin())
+	admin.PUT("/patterns/:id", api.UpdatePattern(wsManager), middlewares.IsAuthenticatedAdmin())
 	admin.DELETE("/patterns/:id", api.DeletePattern(), middlewares.IsAuthenticatedAdmin())
 
 	e.HTTPErrorHandler = serverErrorHandler

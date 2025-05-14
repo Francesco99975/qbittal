@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 
+	"github.com/Francesco99975/qbittal/internal/connections"
 	"github.com/Francesco99975/qbittal/internal/helpers"
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/Francesco99975/qbittal/internal/util"
@@ -21,14 +22,12 @@ func LoadEnvVariables() error {
 	return err
 }
 
-func SetupCronJobs(patterns []models.Pattern) {
+func SetupCronJobs(patterns []models.Pattern, cm *connections.ConnectionManager) {
 	for _, pattern := range patterns {
 		err := util.AddJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireHour, pattern.FireMinute), func() {
-			err := util.Scraper(pattern)
-			if err != nil {
-				log.Errorf("Error while scraping: %v", err)
-			}
+			util.ScrapeJob(pattern, cm)
 		})
+
 		if err != nil {
 			log.Errorf("Error while creating job: %v", err)
 		}

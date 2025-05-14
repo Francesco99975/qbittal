@@ -16,6 +16,11 @@ func main() {
 		panic(err)
 	}
 
+	// Create a root ctx and a CancelFunc which can be used to cancel retentionMap goroutine
+	rootCtx := context.Background()
+	ctx, cancel := context.WithCancel(rootCtx)
+	defer cancel()
+
 	port := os.Getenv("PORT")
 
 	adminPassword := models.Setup(os.Getenv("DSN"))
@@ -25,14 +30,7 @@ func main() {
 		panic(err)
 	}
 
-	patterns, err := models.GetPatterns()
-	if err != nil {
-		panic(err)
-	}
-
-	boot.SetupCronJobs(patterns)
-
-	e := createRouter()
+	e := createRouter(ctx)
 
 	go func() {
 		e.Logger.Infof("Running Environment: %s", os.Getenv("GO_ENV"))
@@ -46,7 +44,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := e.Shutdown(ctx); err != nil {
 		e.Logger.Fatal(err)

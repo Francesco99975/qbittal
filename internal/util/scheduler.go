@@ -3,6 +3,8 @@ package util
 import (
 	"sync"
 
+	"github.com/Francesco99975/qbittal/internal/connections"
+	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/labstack/gommon/log"
 	"github.com/robfig/cron/v3"
 )
@@ -78,4 +80,21 @@ func RemoveJob(id string) {
 	} else {
 		log.Errorf("Job with ID: %d not found\n", id)
 	}
+}
+
+func ScrapeJob(pattern models.Pattern, cm *connections.ConnectionManager) {
+
+	err := Scraper(pattern)
+	if err != nil {
+		log.Errorf("<CRON> Error while scraping: %v", err)
+	}
+	log.Infof("<CRON> Finished job to scrape for pattern ID: %s", pattern.ID)
+
+	jsonPattern, err := pattern.Marshal()
+	if err != nil {
+		log.Errorf("<CRON> Error while marshalling: %v", err)
+	}
+	log.Infof("<CRON> Broadcasting event job happening for: %s", jsonPattern)
+
+	cm.BroadcastEvent(connections.Event{Type: connections.EventProgressJobStarted, Payload: jsonPattern})
 }

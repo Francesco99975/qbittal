@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -173,6 +174,12 @@ func (p *Pattern) Delete() error {
 	query := "DELETE FROM patterns WHERE id = $1"
 	_, err := db.Exec(query, p.ID)
 	return err
+}
+
+func (p *Pattern) Marshal() ([]byte, error) {
+	jr, error := json.Marshal(p)
+
+	return jr, error
 }
 
 type PatternDB struct {

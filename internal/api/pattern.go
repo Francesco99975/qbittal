@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/Francesco99975/qbittal/internal/connections"
 	"github.com/Francesco99975/qbittal/internal/helpers"
 	"github.com/Francesco99975/qbittal/internal/models"
 	"github.com/Francesco99975/qbittal/internal/util"
@@ -19,7 +20,7 @@ func GetPatterns() echo.HandlerFunc {
 	}
 }
 
-func CreatePattern() echo.HandlerFunc {
+func CreatePattern(cm *connections.ConnectionManager) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var payload models.PatternPayload
 
@@ -46,10 +47,7 @@ func CreatePattern() echo.HandlerFunc {
 		}
 
 		err = util.AddJob(newPattern.ID, helpers.ConvertPeriodToCron(newPattern.Period, newPattern.DayIndicator, newPattern.FireHour, newPattern.FireMinute), func() {
-			err = util.Scraper(newPattern)
-			if err != nil {
-				log.Errorf("Error while executing scheduled scraper SET after add <- %v", err)
-			}
+			util.ScrapeJob(newPattern, cm)
 		})
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while creating job", Errors: []string{err.Error()}})
@@ -64,7 +62,7 @@ func CreatePattern() echo.HandlerFunc {
 	}
 }
 
-func UpdatePattern() echo.HandlerFunc {
+func UpdatePattern(cm *connections.ConnectionManager) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var payload models.PatternPayload
 		if err := c.Bind(&payload); err != nil {
@@ -86,6 +84,8 @@ func UpdatePattern() echo.HandlerFunc {
 		pattern.DownloadPath = payload.DownloadPath
 		pattern.Period = payload.Period
 		pattern.DayIndicator = payload.DayIndicator
+		pattern.FireHour = payload.FireHour
+		pattern.FireMinute = payload.FireMinute
 
 		err = pattern.Update()
 		if err != nil {
@@ -93,10 +93,7 @@ func UpdatePattern() echo.HandlerFunc {
 		}
 
 		err = util.UpdateJob(pattern.ID, helpers.ConvertPeriodToCron(pattern.Period, pattern.DayIndicator, pattern.FireHour, pattern.FireMinute), func() {
-			err = util.Scraper(pattern)
-			if err != nil {
-				log.Errorf("Error while executing scheduled scraper SET after update <- %v", err)
-			}
+			util.ScrapeJob(pattern, cm)
 		})
 		if err != nil {
 			return c.JSON(500, models.JSONErrorResponse{Code: 500, Message: "Error while updating job", Errors: []string{err.Error()}})

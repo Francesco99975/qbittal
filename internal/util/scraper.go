@@ -195,7 +195,7 @@ func Scraper(pattern models.Pattern) error {
 	}
 
 	log.Debugf("Number of Torrents found: %d", len(torrents))
-	prettyPrintTorrents(torrents)
+	// prettyPrintTorrents(torrents)
 
 	if len(torrents) == 0 {
 		return fmt.Errorf("No torrents found")
@@ -212,7 +212,7 @@ func Scraper(pattern models.Pattern) error {
 	})
 
 	log.Debugf("Number of Torrents after filtering: %d", len(filteredTorrents))
-	prettyPrintTorrents(filteredTorrents)
+	// prettyPrintTorrents(filteredTorrents)
 
 	// Sort torrents by most seeders
 	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
@@ -220,7 +220,7 @@ func Scraper(pattern models.Pattern) error {
 	})
 
 	log.Debug("< < < Torrents after seeders sorting > > >")
-	prettyPrintTorrents(filteredTorrents)
+	// prettyPrintTorrents(filteredTorrents)
 
 	//Sort torrents by most recent uploaded
 	helpers.SortSlice(filteredTorrents, func(a, b models.Torrent) bool {
@@ -414,51 +414,58 @@ func trackProgress(id string) {
 			log.Debugf("Quitting torrent %s", torrent.Hash)
 			return
 		default:
-			progress, isComplete, err := getTorrentProgress(torrent.Hash, torrent.HttpClient)
+			progress, _, err := getTorrentProgress(torrent.Hash, torrent.HttpClient)
 			if err != nil {
 				log.Errorf("Failed to get torrent progress <- %v", err)
-				return
+				continue
 			}
-			if isComplete {
-				log.Infof("Torrent %s completed", torrent.Hash)
-				DeleteTorrent(id, false)
-				return
-			}
+
 			log.Debugf("Torrent %s progress update to %f", torrent.Hash, progress)
 			Mu.Lock()
 			DownloadingTorrents[id].UpdateProgress(progress)
 			Mu.Unlock()
+
+			if progress >= 1 {
+				log.Infof("Torrent %s completed", torrent.Hash)
+				go func() {
+					timer := time.NewTimer(10 * time.Second)
+					<-timer.C
+					DeleteTorrent(id, os.Getenv("GO_ENV") == "development")
+				}()
+
+				return
+			}
 			time.Sleep(2 * time.Second) // Poll every 2 seconds
 		}
 	}
 }
 
 // Get progress for specific torrent
-func getTorrentProgress(torrentHash string, client *http.Client) (float64, bool, error) {
+func getTorrentProgress(torrentHash string, client *http.Client) (float64, string, error) {
 	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
 	url := fmt.Sprintf("%s/api/v2/torrents/info?hashes=%s", qbittorrentAPI, torrentHash)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0.0, false, fmt.Errorf("failed to create request <- %v", err)
+		return 0.0, "", fmt.Errorf("failed to create request <- %v", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		return 0.0, false, fmt.Errorf("request failed with status %d for hash %s <- %v", resp.StatusCode, torrentHash, err)
+		return 0.0, "", fmt.Errorf("request failed with status %d for hash %s <- %v", resp.StatusCode, torrentHash, err)
 	}
 	defer resp.Body.Close()
 
-	var torrents []map[string]interface{}
+	var torrents []map[string]any
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0.0, false, fmt.Errorf("failed to read response body <- %v", err)
+		return 0.0, "", fmt.Errorf("failed to read response body <- %v", err)
 	}
 	err = json.Unmarshal(body, &torrents)
 	if err != nil {
-		return 0.0, false, fmt.Errorf("failed to unmarshal response body <- %v", err)
+		return 0.0, "", fmt.Errorf("failed to unmarshal response body <- %v", err)
 	}
 	if len(torrents) == 0 {
-		return 0.0, false, fmt.Errorf("no downloading torrents found for hash %s", torrentHash)
+		return 0.0, "", fmt.Errorf("no downloading torrents found for hash %s", torrentHash)
 	}
 
 	log.Debugf("LEN Torrents: %d", len(torrents))
@@ -467,12 +474,18 @@ func getTorrentProgress(torrentHash string, client *http.Client) (float64, bool,
 	log.Debugf("Torrent Progress: %f", torrents[0]["progress"])
 
 	progress := torrents[0]["progress"].(float64)
-	isComplete := torrents[0]["state"] == "stalledUP" || torrents[0]["state"] == "pausedUP"
-	return progress, isComplete, nil
+	state := torrents[0]["state"].(string)
+	return progress, state, nil
 }
 
 // Delete torrent after completion
 func DeleteTorrent(id string, deleteFiles bool) {
+	reportPath := "reports/qbittorrent/api_report.log"
+	reporter, err := helpers.NewReporter(reportPath)
+	if err != nil {
+		log.Errorf("could not create reporter: %v", err)
+	}
+
 	Mu.RLock()
 	torrentHash := DownloadingTorrents[id].Hash
 	client := DownloadingTorrents[id].HttpClient
@@ -483,14 +496,22 @@ func DeleteTorrent(id string, deleteFiles bool) {
 		dfStr = "true"
 	}
 
-	err := QbittDeleteTorrent(client, torrentHash, dfStr)
+	err = QbittDeleteTorrent(client, torrentHash, dfStr)
 	if err != nil {
 		log.Errorf("failed to delete torrent: %w", err)
+		err = reporter.Report(helpers.SeverityLevels.ERROR, fmt.Sprintf("failed to delete torrent: %v", err))
+		if err != nil {
+			log.Errorf("Could not report: %w", err)
+		}
 	}
 
 	err = QbittLogout(client)
 	if err != nil {
 		log.Errorf("failed to logout from qbittorrent: %w", err)
+		err = reporter.Report(helpers.SeverityLevels.ERROR, fmt.Sprintf("failed to logout: %v", err))
+		if err != nil {
+			log.Errorf("Could not report: %w", err)
+		}
 	}
 
 	Mu.Lock()

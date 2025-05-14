@@ -31,7 +31,15 @@ func (a *Admin) VerifyPassword(password string) error {
 func (a *Admin) GenerateToken() (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"sub": a.ID,
-		"exp": time.Now().Add(time.Hour * 72).Unix(),
+		"exp": time.Now().Add(time.Hour * 24 * 14).Unix(),
+	})
+
+	return token.SignedString([]byte(os.Getenv("SECRET_KEY")))
+}
+
+func (a *Admin) GeneratePersistentToken() (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+		"sub": a.ID,
 	})
 
 	return token.SignedString([]byte(os.Getenv("SECRET_KEY")))
