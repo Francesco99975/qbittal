@@ -3,6 +3,7 @@ package models
 type LoginPayload struct {
 	Server   string `json:"server"`
 	Password string `json:"password"`
+	Remember bool   `json:"remember"`
 }
 
 type LoginInfo struct {

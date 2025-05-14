@@ -20,9 +20,9 @@ func ConvertPeriodToCron(period models.Period, dayIndicator string, fireHour int
 	case models.Daily:
 		cron = fmt.Sprintf("%d %d * * *", fireMinute, fireHour)
 	case models.Weekly:
-		cron = fmt.Sprintf("%d %d * * %d", fireMinute, fireHour, day)
+		cron = fmt.Sprintf("%d %d * * %d", fireMinute, fireHour, day+1)
 	case models.Monthly:
-		cron = fmt.Sprintf("%d %d %d * *", fireMinute, fireHour, day)
+		cron = fmt.Sprintf("%d %d %d * *", fireMinute, fireHour, day+1)
 	}
 
 	return cron

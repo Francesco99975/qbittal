@@ -27,7 +27,13 @@ func Login() echo.HandlerFunc {
 			return c.JSON(http.StatusUnauthorized, models.JSONErrorResponse{Code: http.StatusUnauthorized, Message: fmt.Sprintf("Unauthorized: wrong password. Cause -> %v", err)})
 		}
 
-		token, err := admin.GenerateToken()
+		var token string
+		if payload.Remember {
+			token, err = admin.GeneratePersistentToken()
+		} else {
+			token, err = admin.GenerateToken()
+		}
+
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, models.JSONErrorResponse{Code: http.StatusInternalServerError, Message: fmt.Sprintf("Error while generating token. Cause -> %v", err)})
 		}

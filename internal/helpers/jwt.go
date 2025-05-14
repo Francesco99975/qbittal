@@ -22,10 +22,12 @@ func ValidateToken(tokenString string) (string, error) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		expired := int64(claims["exp"].(float64))
+		if exp, ok := claims["exp"]; ok {
+			expired := int64(exp.(float64))
 
-		if time.Now().Unix() > expired {
-			return "", fmt.Errorf("Token expired at %v, now is %v", time.Unix(expired, 0), time.Now())
+			if time.Now().Unix() > expired {
+				return "", fmt.Errorf("Token expired at %v, now is %v", time.Unix(expired, 0), time.Now())
+			}
 		}
 
 		return claims["sub"].(string), nil
