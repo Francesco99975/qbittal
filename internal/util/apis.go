@@ -45,6 +45,7 @@ func QbittAddTorrent(client *http.Client, torrent models.Torrent, downloadPath s
 	addTorrentData := url.Values{}
 	addTorrentData.Set("urls", torrent.MagnetLink)
 	addTorrentData.Set("savepath", downloadPath)
+	addTorrentData.Set("firstLastPiecePrio", "true")
 
 	req, err := http.NewRequest("POST", addTorrentURL, bytes.NewBufferString(addTorrentData.Encode()))
 	if err != nil {
@@ -61,6 +62,29 @@ func QbittAddTorrent(client *http.Client, torrent models.Torrent, downloadPath s
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to add torrent <- Status Code: %d - Body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func QbittIncreasePriority(client *http.Client, torrentHash string) error {
+	qbittorrentAPI := os.Getenv("QBITTORRENT_API")
+	incTorrentURL := fmt.Sprintf("%s/api/v2/torrents/increasePrio?hashes=%s", qbittorrentAPI, torrentHash)
+
+	req, err := http.NewRequest("POST", incTorrentURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create incprio torrent request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to incprio torrent <- %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to incprio torrent <- Status Code: %d - Body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil

@@ -97,6 +97,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: go_boilerplate-image
-          path: go_boilerplate.tar
+          name: qbittal-image
+          path: qbittal.tar
           retention-days: 1

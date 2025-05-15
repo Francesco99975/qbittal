@@ -262,6 +262,11 @@ func Scraper(pattern models.Pattern) error {
 		return fmt.Errorf("failed to add torrent to qbittorrent <- %w", err)
 	}
 
+	// err = QbittIncreasePriority(client, hash)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to incprio torrent <- %w", err)
+	// }
+
 	go trackProgress(pattern.ID)
 
 	log.Infof("Torrent added successfully")
